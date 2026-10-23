@@ -1,0 +1,36 @@
+{
+  "id": "typescript",
+  "display_name": "TypeScript",
+  "file_extensions": [
+    ".ts"
+  ],
+  "source_media_type": "text/x-typescript",
+  "plan_rules": "Generate one .ts file per type named after the type in PascalCase, placing all files in a single flat directory and using relative imports between them.",
+  "style_rules": "TypeScript rules: - Target ES2020 with strict mode. - Classes map to classes, abstract classes to abstract classes, interfaces to interfaces, enums to enums (numeric or string). - Visibility uses public/private/protected modifiers; private fields may use # only if noted, otherwise TS private. - Attributes become typed class fields; provide getters/setters only when visibility is restricted. - Inheritance uses extends, interface realization uses implements. - Relations: single-valued (max 1) as typed properties, collections (max > 1) as arrays (T[]), optional (min 0) as optional properties or nullable union. - Import related types using relative import paths with `import { X } from './X'`. - Use ONLY the standard library and built-in types so the code compiles without external packages.",
+  "tools": [
+    "tsc"
+  ],
+  "build": [
+    "tsc",
+    "--noEmit",
+    "--strict",
+    "{files}"
+  ],
+  "scaffold": {},
+  "sensitive_calls": [
+    "child_process",
+    "require('fs')",
+    "require(\"fs\")",
+    "fs.unlink",
+    "fs.rm",
+    "process.env",
+    "http.request",
+    "https.request",
+    "fetch(",
+    "net.connect"
+  ],
+  "status": "draft",
+  "approved": false,
+  "score": null,
+  "install_guide": "typescript.install.txt"
+}
