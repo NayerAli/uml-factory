@@ -11,7 +11,8 @@ from pathlib import Path, PurePosixPath
 from typing import ClassVar
 
 from ..languages import LanguageSpec, forbidden_generated, safety_problems
-from ..verify import Runtime, VerifyContext, VerifyReport, clean_env, compute_score, find_tool, run, write_tree
+from ..verify import (Runtime, VerifyContext, VerifyReport, clean_env, compute_score, find_tool, findings_to_report,
+                      name_findings, run, write_tree)
 from .base import BaseGeneratorAgent, Validation
 
 
@@ -81,8 +82,12 @@ class CommandRuntime(Runtime):
             report.notes.append(f"{self.spec.build[0]} introuvable sur cet appareil")
             return self.finish(ctx, report)
         if not failures:
-            report.score = compute_score([(10, 1.0), (90, 1.0)])
-            report.details.append("seule la compilation est vérifiée pour ce langage (pas de test de fumée)")
+            if not ctx.model.classes:       # diagramme non analysé : la conformité ne peut pas être contrôlée
+                report.score = min(60, compute_score([(10, 1.0), (90, 1.0)]))
+                report.notes.append(f"{self.spec.display_name} : code compilé, conformité au diagramme non vérifiée")
+                return self.finish(ctx, report)
+            report = findings_to_report(ctx, name_findings(ctx), 1.0, report, smoke_checked=False)
+            report.details.append("compilation et présence des noms du diagramme vérifiées (le code n'est pas exécuté)")
             return self.finish(ctx, report)
         for target, text in failures.items():
             if target:

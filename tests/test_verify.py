@@ -159,8 +159,10 @@ class LanguageSpecTest(unittest.TestCase):
 
     def test_command_runtime_checks_each_file(self):
         runtime = CommandRuntime(self.spec())
-        good = runtime.check(ctx({"a.py": "x = 1\n", "b.py": "y = 2\n"}))
+        good = runtime.check(ctx(PY_OK))
         self.assertEqual(good.score, 100)
+        compiles_only = runtime.check(ctx({"a.py": "x = 1\n", "b.py": "y = 2\n"}))
+        self.assertLess(compiles_only.score, 100)         # compile, mais ne reprend pas le diagramme
         bad = runtime.check(ctx({"a.py": "x = 1\n", "b.py": "def (:\n"}))
         self.assertEqual(list(bad.errors), ["b.py"])
 

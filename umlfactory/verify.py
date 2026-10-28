@@ -256,11 +256,58 @@ def parse_findings(stdout: str) -> list[Finding]:
     return found
 
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def name_findings(ctx: VerifyContext) -> list[Finding]:
+    """Comparaison au diagramme valable pour tout langage : présence des NOMS dans le code généré.
+
+    Mêmes constats que les harnais Java/Python (classe, héritage, attribut, opération, relation), mais sans exécuter
+    le code : un nom compte comme présent s'il apparaît comme identifiant (casse et « _ » ignorés) dans le fichier de
+    la classe. Les types, paramètres et le comportement ne sont pas contrôlés."""
+    idents = {path: {_norm(w) for w in _IDENT.findall(code)} for path, code in ctx.files.items()}
+    everywhere = set().union(*idents.values()) if idents else set()
+
+    def names_in(cls: str) -> set[str]:
+        path = ctx.file_of(cls)
+        return idents[path] if path in idents else everywhere
+
+    found: list[Finding] = []
+    for name, cls in ctx.model.classes.items():
+        ok = _norm(name) in names_in(name) and (ctx.file_of(name) is not None or _norm(name) in everywhere)
+        found.append(Finding("OK" if ok else "FAIL", "class", name,
+                             f"no class named {name} was found in the generated files"))
+        if not ok:
+            continue
+        for kind, members, label in (("attr", cls.attributes, "attribute"),
+                                     ("op", cls.operations if cls.kind != "enum" else [], "operation")):
+            for member in members:
+                ok = _norm(member) in names_in(name)
+                found.append(Finding("OK" if ok else "FAIL", kind, name,
+                                     f"{label} '{member}' of {name} is in the diagram but missing from the code"))
+    for child, parent in [*ctx.model.extends, *ctx.model.implements]:
+        if child in ctx.model.classes and parent in ctx.model.classes:
+            ok = _norm(parent) in names_in(child)
+            found.append(Finding("OK" if ok else "FAIL", "extends", child,
+                                 f"{child} must extend or implement {parent} as in the diagram"))
+    for rel in ctx.model.relations:
+        if rel.source in ctx.model.classes and rel.target in ctx.model.classes:
+            ok = _norm(rel.target) in names_in(rel.source) or (rel.both and _norm(rel.source) in names_in(rel.target))
+            found.append(Finding("OK" if ok else "FAIL", "rel", rel.source,
+                                 f"{rel.source} should have an attribute referring to {rel.target} (relation of the diagram)"))
+    return found
+
+
 def findings_to_report(ctx: VerifyContext, findings: list[Finding], compile_frac: float,
-                       report: VerifyReport, executed: bool = True) -> VerifyReport:
+                       report: VerifyReport, executed: bool = True, smoke_checked: bool = True) -> VerifyReport:
     """Transforme les constats du harnais en erreurs (par fichier), remarques et score.
 
-    `executed=False` : le code n'a pas pu être chargé (compilation en échec) ; les paliers suivants comptent 0."""
+    `executed=False` : le code n'a pas pu être chargé (compilation en échec) ; les paliers suivants comptent 0.
+    `smoke_checked=False` : pas de test de fumée pour ce langage ; son poids passe à la conformité."""
     def frac(kinds: set[str]) -> float | None:
         # un contrôle SKIP (classe jamais chargée, module en échec) n'est pas une réussite : il compte comme un échec
         rows = [f for f in findings if f.kind in kinds and f.level in ("OK", "FAIL", "SKIP")]
@@ -283,6 +330,10 @@ def findings_to_report(ctx: VerifyContext, findings: list[Finding], compile_frac
     # aucune classe dans le diagramme : rien à contrôler (100 %) ; des classes sans aucun contrôle exécuté : 0 %
     nothing_to_check = not any(f.kind == "class" for f in findings)
     no_evidence = 1.0 if nothing_to_check else 0.0
+    if not smoke_checked:
+        report.score = compute_score([(10, 1.0), (40, compile_frac),
+                                      (50, no_evidence if conformity is None else conformity)])
+        return report
     report.score = compute_score([(10, 1.0), (40, compile_frac), (25, no_evidence if smoke is None else smoke),
                                   (25, no_evidence if conformity is None else conformity)])
     return report
