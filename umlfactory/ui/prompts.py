@@ -152,9 +152,11 @@ def select(term: Term, question: str, items: list[str], multi: bool = False, def
                 draw()
                 key = read_key()
                 notice = ""
-                if back and guard.press(key):
+                if back and key in BACK_KEYS and guard.press(key):
                     draw("(retour)")
                     raise GoBack
+                if key not in BACK_KEYS and not (key == "enter" and back and cursor == len(items)):
+                    guard.armed = False
                 if key in BACK_KEYS and back:
                     notice = BACK_WARNING
                     continue
@@ -166,8 +168,11 @@ def select(term: Term, question: str, items: list[str], multi: bool = False, def
                     checked.symmetric_difference_update({cursor})
                 elif key == "enter":
                     if back and cursor == len(items):
-                        draw("(retour)")
-                        raise GoBack
+                        if guard.press("esc"):
+                            draw("(retour)")
+                            raise GoBack
+                        notice = "Appuyez encore une fois sur Entrée pour revenir à l'étape précédente."
+                        continue
                     if multi:
                         if not checked:
                             notice = "Rien n'est coché : appuyez sur Espace devant au moins un choix, puis sur Entrée."

@@ -69,9 +69,14 @@ class MenuTest(unittest.TestCase):
         with self.assertRaises(GoBack):
             run_menu(["esc", "esc"], back=BACK_LABEL)
 
-    def test_back_row_goes_back(self):
+    def test_back_row_needs_two_enter(self):
         with self.assertRaises(GoBack):
-            run_menu(["down", "down", "down", "enter"], back=BACK_LABEL)
+            run_menu(["down", "down", "down", "enter", "enter"], back=BACK_LABEL)
+
+    def test_back_row_single_enter_stays(self):
+        (picked, term) = run_menu(["down", "down", "down", "enter", "up", "enter"], back=BACK_LABEL)
+        self.assertEqual(picked, [2])
+        self.assertIn("encore une fois sur Entrée", term.screen)
 
     def test_back_key_ignored_without_back_option(self):
         (picked, _) = run_menu(["esc", "esc", "enter"])
