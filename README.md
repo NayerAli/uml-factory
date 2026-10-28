@@ -49,8 +49,6 @@ Pas d'installation du projet : seulement ses dépendances. Toutes les commandes 
 `umlfactory-llm`**.
 
 ```
-python -m venv .venv
-.venv\Scripts\activate                 (Linux/macOS : source .venv/bin/activate)
 python -m pip install -r requirements.txt
 copy .env.example .env                 (Linux/macOS : cp .env.example .env)
 ```
@@ -229,7 +227,7 @@ dans le menu**, sans modifier le coordinateur ni la CLI.
 | Symptôme | Solution |
 |---|---|
 | `pip` ne fait rien / bloqué par Windows | Utiliser `python -m pip install -r requirements.txt`. |
-| `ModuleNotFoundError: No module named ...` | Dépendances absentes de ce Python : activer le venv puis relancer l'installation. |
+| `ModuleNotFoundError: No module named ...` | Dépendances absentes de ce Python : lancer `python -m pip install -r requirements.txt`. |
 | `coordinateur injoignable` | La pile n'est pas lancée : ajouter `--spawn` ou lancer `python -m umlfactory.deploy`. |
 | `aucun agent de langage joignable` | Aucun fichier de langage démarré : voir `logs/` et la sortie de `deploy`. |
 | Erreur 401 / 404 de l'API | Vérifier `OPENAI_API_KEY`, `OPENAI_API_URL` et `OPENAI_MODEL` dans `.env`. |
