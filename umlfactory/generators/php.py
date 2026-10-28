@@ -29,5 +29,14 @@ class PhpGenerator(CommandGenerator):
     build = ('php', '-l', '{file}')
     scaffold = {}
     sensitive_calls = ('exec(', 'shell_exec(', 'system(', 'passthru(', 'proc_open(', 'popen(', 'curl_init(', 'fsockopen(', 'pfsockopen(', 'stream_socket_client(', 'socket_create(', 'gethostbyname(', 'unlink(', 'rmdir(', 'getenv(', 'putenv(', '$_ENV')
+    conformity_rules = (
+        'PHP conformity:\n'
+        '- A class, abstract class, interface or enum of the diagram is a `class`, `abstract class`, `interface` or `enum` declaration with the same name.\n'
+        '- An attribute is a property declared with `$` (for example `private string $nom`); its name is compared without the `$`.\n'
+        '- An operation is a `function name(` declaration (a getter or setter counts only if the diagram lists it).\n'
+        '- Inheritance is `extends Parent` and interface realisation is `implements Interface`.\n'
+        '- A relation is a property (or constructor parameter) typed with the other class, or an array documented as `list<Other>` when the maximum cardinality is above 1.\n'
+        '- Names are compared ignoring case and underscores; every class, attribute, operation, inheritance and relation of the diagram must be found.\n'
+    )
     status = 'validated'
     score = 100

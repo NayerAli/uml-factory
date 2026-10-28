@@ -72,7 +72,7 @@ class LangView:
     dest: str = ""
     count: int = 0
     error: str = ""
-    score: int | None = None            # fiabilité du code (vérification d'exécution), sur 100
+    score: int | None = None            # résultat interne de la vérification d'exécution (non affiché)
     verified_in: float | None = None
     verify_note: str = ""               # pourquoi le code n'a pas pu être exécuté
 
@@ -124,17 +124,13 @@ class LiveView:
     def _badge_plain(lang: LangView) -> str:
         if lang.score is None:
             return f"code non exécuté ({lang.verify_note})" if lang.verify_note else ""
-        return f"fiabilité {int(lang.score)}/100" + (f" · vérifiée en {fmt_seconds(float(lang.verified_in))}" if lang.verified_in is not None else "")
+        return "code contrôlé" + (f" en {fmt_seconds(float(lang.verified_in))}" if lang.verified_in is not None else "")
 
     def _badge(self, lang: LangView) -> str:
-        t = self.term
         text = self._badge_plain(lang)
         if not text:
             return ""
-        if lang.score is None:
-            return " · " + t.yellow(text)
-        color = t.green if lang.score >= 80 else (t.yellow if lang.score >= 50 else t.red)
-        return " · " + color(text)
+        return " · " + (self.term.yellow(text) if lang.score is None else self.term.dim(text))
 
     def _lang(self, lid: str | None) -> LangView | None:
         if not lid:

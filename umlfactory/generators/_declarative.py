@@ -112,6 +112,7 @@ class CommandGenerator(BaseGeneratorAgent):
     build: ClassVar[tuple[str, ...]] = ()                 # argv, avec {file}, {files} et {dir}
     scaffold: ClassVar[dict[str, str]] = {}
     sensitive_calls: ClassVar[tuple[str, ...]] = ()
+    conformity_rules: ClassVar[str] = ""                  # comment relire le code face au UML (verdict du modèle)
     status: ClassVar[str] = "validated"
     score: ClassVar[int | None] = None
 
@@ -120,7 +121,8 @@ class CommandGenerator(BaseGeneratorAgent):
             id=self.language, display_name=self.display_name, file_extensions=list(self.file_extensions),
             source_media_type=self.source_media_type, plan_rules=self.plan_rules, style_rules=self.style_rules,
             tools=list(self.tools), build=list(self.build), scaffold=dict(self.scaffold),
-            sensitive_calls=list(self.sensitive_calls), status=self.status, approved=True, score=self.score)
+            sensitive_calls=list(self.sensitive_calls), conformity_rules=self.conformity_rules,
+            status=self.status, approved=True, score=self.score)
 
     def runtime(self) -> Runtime:
         spec = self.to_spec()
@@ -146,5 +148,6 @@ class DeclarativeGenerator(CommandGenerator):
         self.style_rules = spec.style_rules.strip() + "\n"
         self.tools, self.build = tuple(spec.tools), tuple(spec.build)
         self.scaffold, self.sensitive_calls = dict(spec.scaffold), tuple(spec.sensitive_calls)
+        self.conformity_rules = spec.conformity_rules
         self.status, self.score = spec.status, spec.score
         self.version = f"spec-{spec.status}"

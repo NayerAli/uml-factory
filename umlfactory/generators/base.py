@@ -31,7 +31,7 @@ from ..verify import DEFAULT_BUDGET, SLOW_AFTER, Runtime, Tracker, VerifyContext
 from .planning import (EVENT_INTERVAL, MAX_PLANNED_FILES, MAX_PUML_CHARS, PLAN_ATTEMPTS, Emit, GenerationRequest,  # noqa: F401
                        PlannedFile, PlanningMixin, _Tracker)
 from .prompts import CONVERSION_RULES, SIBLING_CONTEXT_CHARS, PromptsMixin, repair_hint  # noqa: F401
-from .repair import EXPLAIN_SYSTEM, MAX_REPAIRS, RepairMixin, Validation, explain_reliability  # noqa: F401
+from .repair import JUDGE_SYSTEM, MAX_REPAIRS, RepairMixin, Validation, judge_conformity, unverified  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ REPORT_ARTIFACT = "_report.json"          # artefact réservé : avertissements,
 class GenerationResult:
     files: dict[str, str]
     warnings: list[str] = field(default_factory=list)
-    verification: dict | None = None           # score de fiabilité et durée des étapes (voir verify.VerifyReport)
+    verification: dict | None = None           # étapes de vérification (voir verify.VerifyReport) et clé « conformity »
 
 
 class BaseGeneratorAgent(PromptsMixin, PlanningMixin, RepairMixin, AgentExecutor, ABC):
@@ -53,6 +53,7 @@ class BaseGeneratorAgent(PromptsMixin, PlanningMixin, RepairMixin, AgentExecutor
     plan_rules: ClassVar[str]                # règles de découpage en fichiers
     source_media_type: ClassVar[str] = "text/plain"
     version: ClassVar[str] = "0.1.0"
+    conformity_rules: ClassVar[str] = ""     # conseils au modèle pour comparer le code au diagramme dans ce langage
 
     @abstractmethod
     def validate(self, files: dict[str, str]) -> Validation:
@@ -124,6 +125,7 @@ class BaseGeneratorAgent(PromptsMixin, PlanningMixin, RepairMixin, AgentExecutor
         files = dict(await asyncio.gather(*(write_one(pf) for pf in plan)))
 
         verification: VerifyReport | None = None
+        unresolved: list[str] = []
         for round_no in range(max_repairs + 1):
             await say({"event": "phase", "text": "vérification du code"})
             check = await asyncio.to_thread(self._check, files, plan)
@@ -141,6 +143,7 @@ class BaseGeneratorAgent(PromptsMixin, PlanningMixin, RepairMixin, AgentExecutor
             for path, problem in check.errors.items():
                 await say({"event": "file", "path": path, "state": "error", "detail": problem.splitlines()[0][:100]})
             if round_no == max_repairs:
+                unresolved = [f"{p} : {e.splitlines()[0][:100]}" for p, e in check.errors.items()]
                 warnings.extend(f"{p} : {e}" for p, e in check.errors.items())
                 warnings.extend(n for n in check.notes if n not in warnings)
                 break
@@ -156,11 +159,21 @@ class BaseGeneratorAgent(PromptsMixin, PlanningMixin, RepairMixin, AgentExecutor
                     return path, code
 
             files.update(await asyncio.gather(*(fix_one(p, e) for p, e in check.errors.items())))
-        summary = verification.as_dict() if verification is not None else None
-        if summary is not None and summary.get("score") is not None and summary["score"] < 100:
-            problems = [*warnings, *verification.notes, *verification.details, *(
-                [f"non vérifié : {verification.skipped}"] if verification.skipped else [])]
-            summary["explanation"] = await explain_reliability(llm, summary["score"], problems)
+        summary = verification.as_dict() if verification is not None else {}
+        await say({"event": "phase", "text": "comparaison avec le diagramme"})
+        try:
+            parsed = parse_uml(req.puml)
+        except Exception:  # noqa: BLE001
+            parsed = Model()
+        if not parsed.classes:
+            conformity = unverified("le diagramme n'a pas pu être analysé")
+        else:
+            evidence = [*warnings, *(verification.notes if verification else []),
+                        *(verification.details if verification else [])]
+            conformity = await judge_conformity(llm, req.puml, files, self.conformity_rules, evidence, unresolved)
+        if verification is not None and verification.skipped:
+            conformity["not_run"] = verification.skipped            # compilation / exécution non faites : à dire
+        summary["conformity"] = conformity
         return GenerationResult(files=files, warnings=warnings, verification=summary)
 
     # ------------------------------------------------------------------ Agent Card

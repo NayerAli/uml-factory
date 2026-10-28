@@ -55,6 +55,7 @@ class LanguageSpec(BaseModel):
     build: list[str] = Field(default_factory=list, max_length=30)      # argv, avec {files} et {dir}
     scaffold: dict[str, str] = Field(default_factory=dict)             # fichiers de projet fixes (go.mod…)
     sensitive_calls: list[str] = Field(default_factory=list, max_length=30)   # sous-chaînes LITTÉRALES interdites
+    conformity_rules: str = Field(default="", max_length=1500)         # comment relire le code face au UML (verdict)
     status: Literal["draft", "experimental", "validated"] = "draft"
     approved: bool = False                    # l'utilisateur a validé la commande de vérification
     score: int | None = None
@@ -195,6 +196,7 @@ def render_generator(spec: LanguageSpec, today: str | None = None) -> str:
         ("build", repr(tuple(spec.build))),
         ("scaffold", repr(dict(spec.scaffold))),
         ("sensitive_calls", repr(tuple(spec.sensitive_calls))),
+        ("conformity_rules", _literal(spec.conformity_rules.strip() + "\n" if spec.conformity_rules.strip() else "")),
         ("status", repr(spec.status)),
         ("score", repr(spec.score)),
     ]

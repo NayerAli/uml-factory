@@ -16,8 +16,9 @@ Vous choisissez le langage cible dans une liste et le dossier de destination, pu
 
 Le LLM lit le diagramme, planifie les fichiers et écrit chacun. Le code est ensuite **vérifié sur votre machine** :
 analyse statique, puis compilation, test de fumée (les classes sont instanciées) et conformité au diagramme
-(héritage, attributs, opérations, relations). Le résultat est un **score de fiabilité sur 100**, calculé en moins de
-10 secondes. En cas d'erreur, le message repart au LLM pour correction (2 tours par défaut). Ce qui reste invalide
+(héritage, attributs, opérations, relations). Enfin, le modèle relit le diagramme et le code, et rend un **verdict** :
+conforme, partiellement conforme (avec la liste de ce qui manque) ou non conforme. Si quelque chose n'a pas pu être
+vérifié (outil absent, délai dépassé), c'est écrit « Non vérifié » avec la raison. En cas d'erreur, le message repart au LLM pour correction (2 tours par défaut). Ce qui reste invalide
 est signalé en avertissement, jamais caché. Un langage absent du menu peut être ajouté depuis le menu
 (« Autre langage… »), voir plus bas.
 
@@ -33,7 +34,7 @@ umlfactory-llm/
     ├── deploy.py           démarre la pile (MCP, coordinateur, un agent par langage)
     ├── coordinator.py      agent coordinateur (A2A) + skills de gestion des langages
     ├── skills.py           skills du coordinateur : créer un langage, vérifier ses outils, le valider
-    ├── verify.py           vérification locale du code généré (exécution contrôlée, score de fiabilité)
+    ├── verify.py           vérification locale du code généré (exécution contrôlée)
     ├── umlmodel.py         lecture minimale du PlantUML, pour CONTRÔLER le code (ne génère rien)
     ├── languages.py        règles de sécurité des langages ajoutés + génération de leur fichier d'agent
     ├── eval_corpus.py      diagrammes de référence pour valider un agent de langage
@@ -167,7 +168,7 @@ Après la génération, chaque agent vérifie son code **sur votre machine**, en
 
 Les erreurs de compilation, d'initialisation ou de conformité repartent au LLM (boucle de correction). Les avertissements
 de cardinalité sont affichés mais ne bloquent pas. Pendant la génération, l'interface affiche l'étape de vérification en
-cours **dès qu'elle dépasse 1 seconde**, puis le score (`fiabilité 100/100, vérifiée en 2.3s`).
+cours **dès qu'elle dépasse 1 seconde**, puis le verdict de conformité (`✔ Conforme au diagramme`).
 
 Si un outil manque sur l'appareil (par exemple `javac`), la CLI le signale avant la génération : le code est généré mais
 affiché « non exécuté ». Si le budget est dépassé, le résultat est « non vérifié », jamais « réussi ».
@@ -184,7 +185,7 @@ Menu **« Autre langage… »** (ou `--add-language Go`). Chaque étape est affi
 3. **Validation de la commande** : la commande de vérification est affichée et vous devez l'autoriser. Elle est limitée à
    une liste de compilateurs connus, sans shell.
 4. **Validation de l'agent** : il convertit des diagrammes de référence (héritage, interfaces, énumérations, relations,
-   visibilités…), le code est compilé, puis un score moyen est calculé. Seuil **75/100** : en dessous, le langage est
+   visibilités…), le code est compilé et comparé au diagramme (un score interne, seuil **75/100**, décide). En dessous, le langage est
    « expérimental » et vous décidez de le garder ou non. Les règles de génération (jamais la commande) peuvent être
    reformulées une fois par le LLM à partir des échecs.
 5. **Fichier d'agent créé** : `umlfactory/generators/<langage>.py`, généré depuis un gabarit fixe (une sous-classe de

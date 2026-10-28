@@ -119,22 +119,46 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
     result = await call_steps(card, {"action": "validate_language", "language_id": lid, "approve": True,
                                      "quick": quick}, term)
     print()
-    for d in result.get("diagrams", []):
-        color = term.green if d["score"] >= result["threshold"] else term.yellow
-        print(f"  {color(str(d['score']).rjust(3) + '/100')}  {d['title']}")
+    diagrams = result.get("diagrams", [])
+    for d in diagrams:
+        good = d["score"] >= result["threshold"]
+        print(f"  {term.green('✔') if good else term.yellow('⚠')}  {d['title']}")
         for w in d.get("warnings", [])[:2]:
-            print(term.dim("           ! " + w.splitlines()[0][:110]))
+            print(term.dim("       ! " + w.splitlines()[0][:100]))
+    passed = sum(1 for d in diagrams if d["score"] >= result["threshold"])
     if result["status"] == "validated":
-        print(term.green(f"✔  {lang['name']} validé : {result['score']}/100 — disponible dans le menu."))
+        print(term.green(f"✔  {lang['name']} validé : {passed} diagramme(s) sur {len(diagrams)} conformes — disponible dans le menu."))
         if result.get("file"):
             print(term.dim(f"   Fichier créé : {Path(result['file']).relative_to(Path.cwd()) if Path(result['file']).is_relative_to(Path.cwd()) else result['file']}"))
         return lid
-    print(term.yellow(f"! {lang['name']} : {result['score']}/100, sous le minimum ({result['threshold']}). Résultats moins sûrs."))
+    print(term.yellow(f"! {lang['name']} : seulement {passed} diagramme(s) sur {len(diagrams)} conformes. Résultats moins sûrs."))
     if interactive and ui.confirm(term, "Garder ce langage malgré tout ?", default=False):
         return lid
     await call_steps(card, {"action": "discard_language", "language_id": lid}, term)
     print("Langage supprimé.")
     return None
+
+
+def conformity_lines(term: ui.Term, check: dict) -> list[str]:
+    """Verdict du modèle sur la conformité au diagramme : 1 à 4 lignes courtes, jamais de note chiffrée."""
+    width = min(term.width - 5, 78)
+    conformity = check.get("conformity") or {}
+    verdict = conformity.get("verdict")
+    if verdict == "conforme":
+        lines = [term.green("   ✔ Conforme au diagramme")]
+    elif verdict == "partiel":
+        lines = [term.yellow("   ⚠ Partiellement conforme au diagramme")]
+        lines += [term.yellow("     - " + textwrap.shorten(m, width, placeholder="…")) for m in conformity.get("missing", [])[:5]]
+    elif verdict == "non_conforme":
+        lines = [term.red("   ✘ Non conforme au diagramme")]
+        if conformity.get("summary"):
+            lines.append(term.dim("     " + textwrap.shorten(conformity["summary"], width, placeholder="…")))
+    else:
+        reason = conformity.get("reason") or "vérification indisponible"
+        lines = [term.yellow(f"   ? Non vérifié : {reason}")]
+    if conformity.get("not_run"):
+        lines.append(term.dim("     Compilation non vérifiée : " + textwrap.shorten(conformity["not_run"], width, placeholder="…")))
+    return lines
 
 
 def count_files(folder: Path) -> int:
@@ -283,15 +307,8 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
     print()
     for lid, info in report.get("languages", {}).items():
         print(f"{term.green('✔ ')} {term.bold(names.get(lid, lid))} : {len(info['files'])} fichier(s) → {info['dest']}")
-        check = info.get("verification") or {}
-        if check.get("score") is not None:
-            color = term.green if check["score"] >= 80 else (term.yellow if check["score"] >= 50 else term.red)
-            print("   " + color(f"fiabilité {check['score']}/100")
-                  + term.dim(f" · vérifiée en {ui.fmt_seconds(check['seconds'])}"))
-            if check.get("explanation"):
-                short = textwrap.shorten(check["explanation"], 2 * min(term.width - 5, 78), placeholder="…")
-                for ln in textwrap.wrap(short, min(term.width - 5, 78)):
-                    print(term.dim("   " + ln))
+        for line in conformity_lines(term, info.get("verification") or {}):
+            print(line)
         warnings = info.get("warnings", [])
         for w in warnings[:3]:
             print(term.yellow("   ! " + textwrap.shorten(w, min(term.width - 5, 78), placeholder="…")))
