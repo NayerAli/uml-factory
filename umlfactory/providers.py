@@ -86,8 +86,8 @@ def choose(term: Term, probes: list[Probe], interactive: bool) -> Candidate:
     if not interactive:
         return valid[0]        # PROVIDERS est classé par préférence (Anthropic d'abord)
     from .ui import select
-    labels = [f"{c.label} · {KEY_VARS[c.provider]} {mask_key(c.key)} · modèle {c.model}" for c in valid]
-    return valid[select(term, "Plusieurs clés d'API valides : quel fournisseur utiliser ?", labels)[0]]
+    labels = [f"{c.label} (modèle {c.model})" for c in valid]
+    return valid[select(term, "Plusieurs services d'IA sont disponibles. Lequel utiliser ?", labels)[0]]
 
 
 def apply(candidate: Candidate) -> None:

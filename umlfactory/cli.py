@@ -24,7 +24,7 @@ from a2a.client import A2ACardResolver
 
 from . import providers, ui
 from .a2a_common import AgentFailed, call_agent
-from .config import KEY_VARS, ConfigError, describe, load_env_file, load_settings, mask_key
+from .config import ConfigError, describe, load_env_file, load_settings
 
 
 class CliError(RuntimeError):
@@ -77,36 +77,34 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
         if not interactive:
             raise CliError("nom du langage manquant (--add-language NOM)")
         name = ui.ask(term, "Quel langage voulez-vous ajouter ? (ex. Go, Kotlin, TypeScript)")
-    print(term.dim("Étapes : spécification → outils sur votre appareil → validation sur des diagrammes de référence."))
+    print(term.dim("Ajout du langage en 3 étapes : préparation, outils, test."))
     report = await call_steps(card, {"action": "create_language", "language_name": name}, term)
     lang = report["language"]
     lid = lang["id"]
 
     while report.get("missing_tools"):
-        print(term.yellow(f"! Outil(s) introuvable(s) sur cet appareil : {', '.join(report['missing_tools'])}"))
+        print(term.yellow(f"! Outils manquants sur votre PC : {', '.join(report['missing_tools'])}"))
         if report.get("guide_path"):
-            print(f"  Guide d'installation (texte) : {report['guide_path']}")
-        print(term.dim("  Rien n'est installé automatiquement : suivez le guide, puis revenez ici."))
-        if not interactive or not ui.confirm(term, "Outils installés ? Revérifier maintenant", default=True):
-            print(f"Langage « {lang['name']} » enregistré en brouillon. Une fois les outils installés, relancez avec "
+            print(f"  Guide d'installation : {report['guide_path']}")
+        print(term.dim("  Rien n'est installé tout seul : suivez le guide, puis revenez."))
+        if not interactive or not ui.confirm(term, "Outils installés ? Vérifier à nouveau", default=True):
+            print(f"Langage « {lang['name']} » gardé en brouillon. Installez les outils, puis relancez avec "
                   f"--add-language \"{name}\".")
             return None
         report = await call_steps(card, {"action": "check_language", "language_id": lid}, term)
 
     print()
     print(term.bold(f"Contrôle du code {lang['name']} généré"))
-    print(term.dim("  Pour vérifier chaque fichier produit, l'outil lancera cette commande sur votre PC "
-                   "({file} = le fichier à contrôler ; sans votre clé d'API, 10 s maximum) :"))
-    print("  " + term.cyan(lang["build"] or "(aucune : seule la syntaxe de base sera contrôlée)"))
+    print(term.dim("  Pour contrôler le code, cette commande sera lancée sur votre PC :"))
+    print("  " + term.cyan(lang["build"] or "(aucune : contrôle simple seulement)"))
     if lang.get("scaffold"):
         print(term.dim("  Fichiers de projet ajoutés : " + ", ".join(lang["scaffold"])))
     if lang.get("sensitive_calls"):
-        print(term.dim("  Le code sera aussi refusé s'il contient des appels dangereux, par exemple : "
-                       + ", ".join(lang["sensitive_calls"][:8])))
+        print(term.dim("  Le code est refusé s'il contient : " + ", ".join(lang["sensitive_calls"][:5])))
     if not approve:
         if not interactive:
             raise CliError("commande de vérification non approuvée : ajouter --approve pour l'autoriser")
-        if not ui.confirm(term, "Autoriser cette commande de contrôle ?", default=True):
+        if not ui.confirm(term, "Autoriser cette commande ?", default=True):
             print("Annulé. La spécification reste en brouillon (rien n'a été exécuté).")
             return None
 
@@ -114,11 +112,10 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
     if interactive:
         print()
         print(term.bold(f"Test du nouveau langage {lang['name']}"))
-        print(term.dim("  Avant de l'ajouter au menu, l'agent convertit des diagrammes d'exemple pour prouver "
-                       "qu'il produit du code correct."))
-        quick = ui.confirm(term, "Test rapide (3 diagrammes, quelques minutes) ? Non = test complet (6 diagrammes)",
+        print(term.dim("  Le langage est essayé sur des diagrammes d'exemple avant d'être ajouté."))
+        quick = ui.confirm(term, "Faire un test rapide (quelques minutes) ? Non = test complet, plus long",
                            default=True)
-    print(term.dim("Validation de l'agent : il convertit des diagrammes de référence, puis le code est compilé et contrôlé."))
+    print(term.dim("Test en cours, patientez…"))
     result = await call_steps(card, {"action": "validate_language", "language_id": lid, "approve": True,
                                      "quick": quick}, term)
     print()
@@ -130,10 +127,9 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
     if result["status"] == "validated":
         print(term.green(f"✔  {lang['name']} validé : {result['score']}/100 — disponible dans le menu."))
         if result.get("file"):
-            print(term.dim(f"   Agent créé : {Path(result['file']).relative_to(Path.cwd()) if Path(result['file']).is_relative_to(Path.cwd()) else result['file']} "
-                           "(modifiable à la main ; supprimer ce fichier retire le langage)"))
+            print(term.dim(f"   Fichier créé : {Path(result['file']).relative_to(Path.cwd()) if Path(result['file']).is_relative_to(Path.cwd()) else result['file']}"))
         return lid
-    print(term.yellow(f"! {lang['name']} : {result['score']}/100, sous le seuil de {result['threshold']} (langage « expérimental »)."))
+    print(term.yellow(f"! {lang['name']} : {result['score']}/100, sous le minimum ({result['threshold']}). Résultats moins sûrs."))
     if interactive and ui.confirm(term, "Garder ce langage malgré tout ?", default=False):
         return lid
     await call_steps(card, {"action": "discard_language", "language_id": lid}, term)
@@ -164,7 +160,7 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
         chosen = await providers.resolve(term, interactive, args.provider, args.reset_model)
     except ConfigError as exc:
         raise CliError(str(exc)) from exc
-    print(term.dim(f"Modèle : {chosen.label} · {KEY_VARS[chosen.provider]} {mask_key(chosen.key)} · {chosen.model}"))
+    print(term.dim(f"Modèle utilisé : {chosen.label} ({chosen.model})"))
 
     async def refresh() -> None:
         nonlocal options, missing, ids, names
@@ -178,51 +174,66 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
             return 1
         await refresh()
         added.append(lid)
-    # 1. diagramme
+    # 1-3. diagramme, langage(s), destination : étapes avec retour possible (Échap) tant que rien n'est lancé
     model = args.model
-    if not model:
-        if not interactive:
-            raise CliError("fichier PlantUML manquant (premier argument)")
-        model = ui.choose_puml(term, next((c for c in ("model.puml",) if Path(c).is_file()), None))
-    model_path = Path(model).expanduser().resolve()
-    if not model_path.is_file():
-        raise CliError(f"fichier introuvable : {model_path}")
-
-    # 2. langage(s) : jamais « tous » par défaut
     languages: list[str] | None = added or None
     if args.lang:
         languages = [*added, *(l.lower() for l in args.lang)]
         unknown = [l for l in languages if l not in ids]
         if unknown:
             raise CliError(f"langage inconnu : {', '.join(unknown)}. Disponibles : {', '.join(sorted(ids))}")
-    elif not args.ask and not languages:
-        if not interactive:
+    out = args.out
+    ask_languages = not args.lang and not args.ask and not languages      # jamais « tous » par défaut
+    if not interactive:
+        if not model:
+            raise CliError("fichier PlantUML manquant (premier argument)")
+        if ask_languages:
             raise CliError(f"préciser --lang parmi : {', '.join(sorted(ids))}")
-        chosen_langs = ui.choose_languages(term, options, allow_new=True)
+        if not out:
+            raise CliError("dossier de destination manquant (--out)")
+
+    async def step_file(back: str) -> None:
+        nonlocal model
+        while True:
+            model = ui.choose_puml(term, next((c for c in ("model.puml",) if Path(c).is_file()), None), back=back)
+            if Path(model).expanduser().is_file():
+                return
+            print(term.red(f"  Fichier introuvable : {model}. Vérifiez le chemin et réessayez."))
+
+    async def step_languages(back: str) -> None:
+        nonlocal languages
+        chosen_langs = ui.choose_languages(term, options, allow_new=True, back=back)
         languages = []
         for entry in chosen_langs:
             if entry.startswith(ui.NEW_LANGUAGE):
                 new_name = entry.partition(":")[2] or None
                 lid = await add_language(card, term, new_name, interactive, args.approve)
                 if lid is None:
-                    return 1
+                    raise CliError("ajout du langage abandonné")
                 await refresh()
                 entry = lid
             languages.append(entry)
 
-    # 3. destination
-    out = args.out
-    if not out:
-        if not interactive:
-            raise CliError("dossier de destination manquant (--out)")
-        print(term.dim("  Par défaut, le code est écrit dans le dossier ./sortie (créé s'il n'existe pas)."))
-        out = ui.ask(term, "Dossier de destination (Entrée = ./sortie)", "./sortie")
+    async def step_destination(back: str) -> None:
+        nonlocal out
+        default_out = str(Path("sortie").resolve())
+        print(term.dim("  Dossier où seront créés les fichiers générés. Entrée = garder celui proposé."))
+        out = ui.ask(term, "Dossier de destination", default_out, back=True)
+
+    steps = [fn for fn, needed in ((step_file, not model), (step_languages, ask_languages), (step_destination, not out))
+             if needed]
+    if not await ui.run_steps(steps):
+        print("Annulé.")
+        return 1
+    model_path = Path(model).expanduser().resolve()
+    if not model_path.is_file():
+        raise CliError(f"fichier introuvable : {model_path}")
     out_dir = Path(out).expanduser().resolve()
 
     for lid in languages or []:         # la vérification d'exécution a besoin d'outils présents sur CET appareil
         if missing.get(lid):
-            print(term.yellow(f"! {names.get(lid, lid)} : {', '.join(missing[lid])} introuvable sur cet appareil. "
-                              "Le code sera généré mais ni compilé ni exécuté."))
+            print(term.yellow(f"! {names.get(lid, lid)} : outil manquant ({', '.join(missing[lid])}). "
+                              "Le code sera créé mais pas testé."))
 
     payload: dict = {"puml_path": str(model_path), "output_dir": str(out_dir), "layout": args.layout,
                      "provider": chosen.provider}
@@ -246,7 +257,7 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
         if not interactive:
             raise CliError(f"{where} contient déjà {existing} fichier(s) : utiliser --overwrite pour les remplacer")
         print(term.yellow(f"! {where} contient déjà {existing} fichier(s)."))
-        if not ui.confirm(term, "Remplacer les fichiers portant le même nom ?"):
+        if not ui.confirm(term, "Remplacer les fichiers qui ont le même nom ?"):
             print("Annulé.")
             return 1
         overwrite = True
@@ -278,10 +289,14 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
             print("   " + color(f"fiabilité {check['score']}/100")
                   + term.dim(f" · vérifiée en {ui.fmt_seconds(check['seconds'])}"))
             if check.get("explanation"):
-                for ln in textwrap.wrap(check["explanation"], max(40, term.width - 5)):
+                short = textwrap.shorten(check["explanation"], 2 * min(term.width - 5, 78), placeholder="…")
+                for ln in textwrap.wrap(short, min(term.width - 5, 78)):
                     print(term.dim("   " + ln))
-        for w in info.get("warnings", []):
-            print(term.yellow("   ! " + w.replace("\n", "\n     ")))
+        warnings = info.get("warnings", [])
+        for w in warnings[:3]:
+            print(term.yellow("   ! " + textwrap.shorten(w, min(term.width - 5, 78), placeholder="…")))
+        if len(warnings) > 3:
+            print(term.dim(f"   … et {len(warnings) - 3} autre(s) remarque(s)"))
     for lid, reason in report.get("failed", {}).items():
         print(f"{term.red('✘ ')} {term.bold(names.get(lid, lid))} : {reason}", file=sys.stderr)
     print(term.dim(f"Durée totale : {ui.fmt_time(time.monotonic() - started)}"))

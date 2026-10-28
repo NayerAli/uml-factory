@@ -28,8 +28,11 @@ from .progress import (
 )
 
 from .prompts import (
+    BACK_LABEL,
+    GoBack,
     NEW_LANGUAGE,
-    NEW_LANGUAGE,
+    QUIT_LABEL,
+    run_steps,
     SOURCE_DIRS,
     ask,
     choose_languages,
