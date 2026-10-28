@@ -3,7 +3,7 @@
     python -m umlfactory.deploy          # au premier plan, Ctrl+C pour tout arrêter
 
 Les langages sont détectés automatiquement : chaque fichier de umlfactory/generators/ (hors base.py et
-fichiers commençant par « _ ») est un langage et reçoit son agent, sur un port libre de la plage
+fichiers commençant par « _ ») est un langage et reçoit son agent (java.py, python.py, ou un fichier créé par la CLI), sur un port libre de la plage
 GENERATOR_PORT_RANGE. Les journaux de chaque composant sont écrits dans ./logs/.
 Un composant déjà démarré est laissé tel quel.
 """
@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import pkgutil
 import socket
 import subprocess
 import sys
@@ -42,11 +41,8 @@ class Component:
 
 def language_modules() -> list[str]:
     """Langages disponibles = modules de umlfactory/generators (convention : nom du fichier = id du langage)."""
-    from . import generators
-    from .languages import active_ids
-    built_in = {m.name for m in pkgutil.iter_modules(generators.__path__)
-                if not m.name.startswith("_") and m.name != "base"}
-    return sorted(built_in | set(active_ids()))
+    from .generators import built_in_ids
+    return sorted(built_in_ids())
 
 
 def tcp_open(port: int, host: str = "127.0.0.1") -> bool:

@@ -1,8 +1,10 @@
-"""Langages ajoutés à la volée : une SPÉCIFICATION (données JSON validées), jamais du code écrit par un LLM.
+"""Langages ajoutés depuis la CLI : le LLM rédige des DONNÉES (LanguageSpec), jamais du code.
 
-La spécification décrit les règles de génération, les outils requis sur l'appareil et la commande de vérification.
-Cette commande est exécutée sur la machine de l'utilisateur : elle est donc restreinte à une liste de compilateurs
-connus, sans shell, et l'utilisateur la valide avant la première exécution (champ `approved`).
+Un brouillon (umlfactory/.drafts/<id>.json) existe le temps de la validation. Une fois la commande de vérification
+approuvée par l'utilisateur et l'agent validé, un vrai fichier d'agent `generators/<id>.py` est généré à partir d'un
+gabarit fixe : c'est le même format que java.py et python.py. Retirer un langage = supprimer son fichier.
+La commande de vérification est exécutée sur la machine de l'utilisateur : elle est restreinte à une liste de
+compilateurs connus, sans shell.
 """
 
 from __future__ import annotations
@@ -20,7 +22,9 @@ from .paths import UnsafePathError, safe_relative_path
 
 log = logging.getLogger(__name__)
 
-SPEC_DIR = Path(__file__).parent / "langspecs"
+DRAFT_DIR = Path(__file__).parent / ".drafts"
+GENERATORS_DIR = Path(__file__).parent / "generators"
+GENERATED_MARK = "Fichier créé par « Autre langage… »"
 VALIDATED_MIN = 75           # score moyen (sur 100) à partir duquel un langage est « validé »
 
 # Seuls ces exécutables peuvent être lancés pour vérifier un langage ajouté.
@@ -114,30 +118,31 @@ def forbidden_generated(paths: list[str]) -> list[str]:
             or PurePosixPath(p).name.lower().endswith(FORBIDDEN_SUFFIXES)]
 
 
-# ---------------------------------------------------------------------------------- stockage
+# ---------------------------------------------------------------------------------- brouillons
 
 def spec_path(language_id: str) -> Path:
-    return SPEC_DIR / f"{language_id}.json"
+    return DRAFT_DIR / f"{language_id}.json"
 
 
 def guide_path(language_id: str) -> Path:
-    return SPEC_DIR / f"{language_id}.install.txt"
+    return DRAFT_DIR / f"{language_id}.install.txt"
 
 
 def load_spec(language_id: str) -> LanguageSpec | None:
+    """Brouillon d'un langage en cours d'ajout, ou None."""
     path = spec_path(language_id)
     if not re.fullmatch(r"[a-z][a-z0-9]{0,19}", language_id) or not path.is_file():
         return None
     try:
         spec = LanguageSpec.model_validate_json(path.read_text(encoding="utf-8"))
     except (ValidationError, ValueError, OSError) as exc:
-        log.warning("spécification de langage illisible (%s) : %s", path.name, exc)
+        log.warning("brouillon de langage illisible (%s) : %s", path.name, exc)
         return None
     return spec if spec.id == language_id and not safety_problems(spec) else None
 
 
 def save_spec(spec: LanguageSpec) -> Path:
-    SPEC_DIR.mkdir(parents=True, exist_ok=True)
+    DRAFT_DIR.mkdir(parents=True, exist_ok=True)
     path = spec_path(spec.id)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(spec.model_dump(), ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
@@ -150,13 +155,71 @@ def delete_spec(language_id: str) -> None:
         path.unlink(missing_ok=True)
 
 
-def list_specs() -> list[LanguageSpec]:
-    if not SPEC_DIR.is_dir():
-        return []
-    found = (load_spec(p.stem) for p in sorted(SPEC_DIR.glob("*.json")))
-    return [s for s in found if s is not None]
+# ---------------------------------------------------------------------------------- fichier d'agent généré
+
+def generator_path(language_id: str) -> Path:
+    return GENERATORS_DIR / f"{language_id}.py"
 
 
-def active_ids() -> list[str]:
-    """Langages ajoutés qui doivent recevoir un agent au démarrage (validés ou expérimentaux, commande approuvée)."""
-    return [s.id for s in list_specs() if s.approved and s.status in ("experimental", "validated")]
+def is_generated(language_id: str) -> bool:
+    """Vrai si generators/<id>.py a été créé par la CLI (jamais pour un agent écrit à la main, ex. java.py)."""
+    try:
+        return GENERATED_MARK in generator_path(language_id).read_text(encoding="utf-8")[:400]
+    except OSError:
+        return False
+
+
+def _literal(value: str, indent: int = 4) -> str:
+    """Chaîne Python lisible : une ligne de source par ligne de texte."""
+    parts = value.splitlines(keepends=True) or [""]
+    if len(parts) == 1:
+        return repr(parts[0])
+    pad = " " * (indent + 4)
+    return "(\n" + "\n".join(pad + repr(p) for p in parts) + "\n" + " " * indent + ")"
+
+
+def render_generator(spec: LanguageSpec, today: str | None = None) -> str:
+    """Source Python de l'agent d'un langage : gabarit fixe, seules les valeurs viennent de la spécification."""
+    import datetime
+    today = today or datetime.date.today().isoformat()
+    cls = spec.id.capitalize() + "Generator"
+    score = f"{spec.score}/100" if spec.score is not None else "non évalué"
+    attrs = [
+        ("language", repr(spec.id)),
+        ("display_name", repr(spec.display_name)),
+        ("file_extensions", repr(tuple(spec.file_extensions))),
+        ("source_media_type", repr(spec.source_media_type)),
+        ("plan_rules", _literal(spec.plan_rules)),
+        ("style_rules", _literal(spec.style_rules.strip() + "\n")),
+        ("tools", repr(tuple(spec.tools))),
+        ("build", repr(tuple(spec.build))),
+        ("scaffold", repr(dict(spec.scaffold))),
+        ("sensitive_calls", repr(tuple(spec.sensitive_calls))),
+        ("status", repr(spec.status)),
+        ("score", repr(spec.score)),
+    ]
+    body = "\n".join(f"    {name} = {value}" for name, value in attrs)
+    return (f'"""Agent générateur {spec.display_name}. {GENERATED_MARK} le {today} (score {score}, statut {spec.status}).\n\n'
+            f'Modifiable à la main. Pour retirer ce langage, supprimer ce fichier : le noyau n\'a pas à changer.\n"""\n\n'
+            f"from __future__ import annotations\n\nfrom ._declarative import CommandGenerator\n\n\n"
+            f"class {cls}(CommandGenerator):\n{body}\n")
+
+
+def export_generator(spec: LanguageSpec) -> Path:
+    """Écrit generators/<id>.py (après contrôle de sécurité et de syntaxe) et supprime le brouillon."""
+    problems = safety_problems(spec)
+    if problems:
+        raise ValueError("spécification refusée : " + " ; ".join(problems))
+    source = render_generator(spec)
+    compile(source, f"{spec.id}.py", "exec")                # le fichier doit être du Python valide
+    path = generator_path(spec.id)
+    tmp = path.with_suffix(".py.tmp")
+    tmp.write_text(source, encoding="utf-8", newline="\n")
+    os.replace(tmp, path)
+    spec_path(spec.id).unlink(missing_ok=True)
+    return path
+
+
+def delete_generated(language_id: str) -> None:
+    if is_generated(language_id):
+        generator_path(language_id).unlink(missing_ok=True)

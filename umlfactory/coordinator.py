@@ -58,6 +58,7 @@ class CoordinatorRequest(BaseModel):
     language_name: str | None = Field(default=None, max_length=60)   # create_language : nom donné par l'utilisateur
     language_id: str | None = Field(default=None, max_length=20)     # check / validate / discard_language
     approve: bool = False                 # validate_language : l'utilisateur a validé la commande de vérification
+    provider: Literal["openai", "anthropic"] | None = None   # fournisseur choisi à la CLI (sinon déduit de l'env)
     quick: bool = False                   # validate_language : corpus réduit (3 diagrammes au lieu de 6)
 
 
@@ -178,9 +179,7 @@ class Coordinator(AgentExecutor):
             served = {}
         if language_id in served or language_id in self._hosted:
             return False
-        agent, spec = build_agent(language_id)
-        if spec is None:
-            return False
+        agent, _ = build_agent(language_id)
         port = free_port(settings.generator_ports)
         server = _InProcessServer(uvicorn.Config(build_app(agent, f"http://127.0.0.1:{port}/"), host="127.0.0.1",
                                                  port=port, log_level="warning"))
@@ -270,8 +269,8 @@ class Coordinator(AgentExecutor):
             raise CoordinatorError("layout « flat » avec plusieurs langages mélangerait les fichiers : "
                                    "utiliser « by-language » ou `outputs`")
 
-        payload = {k: v for k, v in {"puml": puml, "package": req.package,
-                                     "instructions": req.instructions}.items() if v}
+        payload = {k: v for k, v in {"puml": puml, "package": req.package, "instructions": req.instructions,
+                                     "provider": settings.provider}.items() if v}
 
         async def one(language: str) -> dict:
             agent = by_language[language]
@@ -323,7 +322,8 @@ class Coordinator(AgentExecutor):
                 raise ValueError('envoyer un objet JSON {"action": "list_languages"} ou '
                                  '{"puml_path": "...", "output_dir": "...", "languages": ["java"]}')
             req = CoordinatorRequest.model_validate(data[0])
-            settings = load_settings(require_api=req.action in LANGUAGE_ACTIONS or bool(req.request and not req.languages))
+            settings = load_settings(require_api=req.action in LANGUAGE_ACTIONS or bool(req.request and not req.languages),
+                                     provider=req.provider)
         except (ValueError, ValidationError, ConfigError) as exc:
             await updater.failed(note(f"requête invalide : {exc}"))
             return

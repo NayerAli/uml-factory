@@ -35,10 +35,10 @@ umlfactory-llm/
     ├── skills.py           skills du coordinateur : créer un langage, vérifier ses outils, le valider
     ├── verify.py           vérification locale du code généré (exécution contrôlée, score de fiabilité)
     ├── umlmodel.py         lecture minimale du PlantUML, pour CONTRÔLER le code (ne génère rien)
-    ├── languages.py        langages ajoutés : spécifications JSON validées (umlfactory/langspecs/)
+    ├── languages.py        règles de sécurité des langages ajoutés + génération de leur fichier d'agent
     ├── eval_corpus.py      diagrammes de référence pour valider un agent de langage
     ├── mcp_server.py       serveur MCP (lecture du .puml, écriture des sources)
-    ├── generators/         UN FICHIER PAR LANGAGE : java.py, python.py, ... (+ base.py commun)
+    ├── generators/         UN FICHIER PAR LANGAGE : java.py, python.py, php.py... (+ base.py commun)
     └── config.py, llm.py, ui.py, a2a_common.py, mcp_client.py, paths.py, textutil.py
 └── tests/test_verify.py    python -m unittest discover -s tests
 ```
@@ -148,12 +148,10 @@ Les agents n'écoutent que sur `127.0.0.1` (votre PC) : rien n'est exposé sur l
 | `OPENAI_API_KEY` | Votre clé d'API. Peut rester vide pour un serveur local sans authentification. |
 | `OPENAI_MODEL` | Nom exact du modèle chez ce fournisseur. |
 | `OPENAI_TIMEOUT` | Attente maximale (secondes) d'une réponse du modèle. Augmenter pour un modèle très lent. Défaut 600. |
-| `OPENAI_CONCURRENCY` | Nombre de fichiers écrits en parallèle. Défaut 2 ; mettre 1 pour un petit modèle local. |
+| `OPENAI_CONCURRENCY` | Nombre de fichiers écrits en parallèle. Défaut 5 ; mettre 1 pour un petit modèle local. |
 | `OPENAI_TEMPERATURE` | Créativité du modèle. Non envoyée par défaut (certains modèles la refusent). |
 | `OPENAI_MAX_TOKENS` | Longueur maximale d'une réponse. Non envoyée par défaut. |
 | `OPENAI_EXTRA` | Paramètres JSON ajoutés à chaque requête, ex. `{"reasoning_effort": "low"}`. |
-| `UMLFACTORY_MAX_REPAIRS` | Combien de fois le LLM peut corriger un fichier invalide. Défaut 2 ; `0` désactive la correction. |
-| `UMLFACTORY_VERIFY_TIMEOUT` | Temps maximal (secondes) de la vérification d'exécution. Défaut 10 ; `0` : le code généré n'est jamais exécuté. |
 | `MCP_URL`, `COORDINATOR_URL` | Adresses du serveur MCP et du coordinateur (défauts : ports 9000 et 9200). |
 | `GENERATOR_PORT_RANGE` | Plage de ports où les agents de langage sont cherchés et lancés. Défaut `9101-9150`. |
 | `GENERATOR_AGENT_URLS` | Agents de langage supplémentaires hors de cette plage (autre machine), séparés par des virgules. |
@@ -180,10 +178,10 @@ affiché « non exécuté ». Si le budget est dépassé, le résultat est « no
 
 Menu **« Autre langage… »** (ou `--add-language Go`). Chaque étape est affichée :
 
-1. **Spécification** : le LLM rédige des *données* (règles de génération, outils requis, commande de vérification).
-   Il n'écrit aucun code Python et n'exécute rien.
+1. **Brouillon** : le LLM rédige des *données* (règles de génération, outils requis, commande de vérification),
+   gardées dans `umlfactory/.drafts/` le temps de l'opération. Il n'écrit aucun code Python et n'exécute rien.
 2. **Outils sur l'appareil** : les exécutables nécessaires sont cherchés sur votre machine. S'ils manquent, le LLM écrit
-   un **guide d'installation en texte** (`umlfactory/langspecs/<langage>.install.txt`) ; rien n'est installé par lui.
+   un **guide d'installation en texte** (`umlfactory/.drafts/<langage>.install.txt`) ; rien n'est installé par lui.
    Suivez le guide, puis revenez : la CLI revérifie.
 3. **Validation de la commande** : la commande de vérification est affichée et vous devez l'autoriser. Elle est limitée à
    une liste de compilateurs connus, sans shell.
@@ -191,11 +189,13 @@ Menu **« Autre langage… »** (ou `--add-language Go`). Chaque étape est affi
    visibilités…), le code est compilé, puis un score moyen est calculé. Seuil **75/100** : en dessous, le langage est
    « expérimental » et vous décidez de le garder ou non. Les règles de génération (jamais la commande) peuvent être
    reformulées une fois par le LLM à partir des échecs.
-5. **Disponible** immédiatement dans le menu, et lancé automatiquement par `deploy` ensuite.
+5. **Fichier d'agent créé** : `umlfactory/generators/<langage>.py`, généré depuis un gabarit fixe (une sous-classe de
+   `CommandGenerator` avec quelques attributs). C'est le même format que `java.py` et `python.py`, modifiable à la main.
+   Le langage est **disponible** immédiatement dans le menu, et lancé automatiquement par `deploy` ensuite.
 
 Pour les langages ajoutés, la vérification porte sur la compilation ou la syntaxe (le test de fumée et la conformité
 sont propres à Java et Python). Les fichiers de projet qui exécutent du code à la compilation (`build.rs`, `*.csproj`,
-`package.json`, scripts) sont refusés. Pour oublier un langage ajouté : supprimer son fichier dans `umlfactory/langspecs/`.
+`package.json`, scripts) sont refusés. Pour retirer un langage (ajouté ou intégré, Java et Python compris) : supprimer son fichier dans `umlfactory/generators/`. Le noyau n'a pas à changer.
 
 ## Tests
 
@@ -236,7 +236,7 @@ dans le menu**, sans modifier le coordinateur ni la CLI.
 | Dossier de destination « non vide » | Choisir un autre dossier, ou confirmer / utiliser `--overwrite`. |
 | `javac introuvable sur cet appareil` | Installer un JDK pour compiler et tester le Java généré (facultatif : sinon le code est généré mais « non exécuté »). |
 | `code non exécuté : appels sensibles détectés` | Le code généré utilise des processus, du réseau ou des fichiers : il n'est pas exécuté et le LLM doit le corriger. |
-| `non vérifié` / délai dépassé | La vérification a dépassé `UMLFACTORY_VERIFY_TIMEOUT` (machine lente ou boucle infinie) : augmenter le délai. |
+| `non vérifié` / délai dépassé | La vérification a dépassé 10 secondes (machine lente ou boucle infinie). |
 | Langage ajouté en « brouillon » | Un outil manque : suivre le guide `.install.txt`, puis relancer `--add-language`. |
 | Avertissement sur un fichier à la fin | Le LLM n'a pas réussi à corriger ce fichier : le relire, ou relancer la génération. |
 
@@ -256,7 +256,6 @@ diagramme est supposé de confiance. Les garde-fous sont volontairement simples 
 - environnement nettoyé : ni clé d'API ni variable du `.env` ne sont transmises au code ;
 - scan préalable des appels sensibles (processus, réseau, fichiers, environnement) : s'il y en a, rien n'est exécuté ;
 - seules des instanciations sont faites (jamais d'opération métier, jamais de `main`) ;
-- `UMLFACTORY_VERIFY_TIMEOUT=0` désactive toute exécution.
 
 Pour un langage ajouté depuis le menu, le LLM ne produit que des données ; la commande de vérification qu'il propose
 est restreinte à une liste de compilateurs, sans shell, et doit être autorisée par l'utilisateur.

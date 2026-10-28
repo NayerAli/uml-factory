@@ -1,0 +1,97 @@
+@startuml banque_grand
+' Diagramme de test plus grand : héritage, interface, énumération et associations dans les deux sens.
+
+interface IPaiement {
+    +payer(montant : double) : boolean
+}
+
+enum TypeTransaction {
+    DEPOT
+    RETRAIT
+    VIREMENT
+}
+
+abstract class CompteBancaire {
+    -numero : String
+    -solde : double
+    +deposer(montant : double)
+    +retirer(montant : double) : boolean
+    +getSolde() : double
+}
+note right of CompteBancaire
+  Compte bancaire générique : numéro et solde, dépôts et retraits.
+end note
+
+class CompteCourant {
+    -decouvertAutorise : double
+}
+note right of CompteCourant
+  Compte courant avec découvert autorisé.
+end note
+
+class CompteEpargne {
+    -tauxInteret : double
+    +calculerInterets() : double
+}
+note right of CompteEpargne
+  Compte épargne rémunéré.
+end note
+
+class Client {
+    -nom : String
+    -prenom : String
+    -email : String
+    +getNomComplet() : String
+}
+note right of Client
+  Client de la banque, titulaire d'au moins un compte.
+end note
+
+class Carte {
+    -numero : String
+    -plafond : double
+    +payer(montant : double) : boolean
+}
+note right of Carte
+  Carte bancaire rattachée à un compte.
+end note
+
+class Transaction {
+    -date : String
+    -montant : double
+    -type : TypeTransaction
+    +decrire() : String
+}
+note right of Transaction
+  Mouvement enregistré sur un compte.
+end note
+
+class Agence {
+    -code : String
+    -ville : String
+}
+
+class Banque {
+    -nom : String
+    +ouvrirCompte(client : Client)
+}
+note right of Banque
+  Établissement qui regroupe agences, clients et comptes.
+end note
+
+class Portefeuille {
+    -devise : String
+    +ajouterFonds(montant : double)
+}
+
+CompteBancaire <|-- CompteCourant
+CompteBancaire <|-- CompteEpargne
+IPaiement <|.. Carte
+Client "1" -- "*" CompteBancaire : possède
+CompteBancaire "1" -- "*" Carte : rattache
+CompteBancaire "1" -- "*" Transaction : enregistre
+Banque "1" -- "*" Agence : possède
+Banque "1" -- "*" Client : gère
+Agence "1" -- "*" CompteBancaire : héberge
+Client "1" -- "0..1" Portefeuille : utilise
+@enduml

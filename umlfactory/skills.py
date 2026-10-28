@@ -20,9 +20,10 @@ from pydantic import ValidationError
 
 from .config import Settings
 from .eval_corpus import Reference, select
-from .generators.base import BaseGeneratorAgent, GenerationRequest
-from .languages import (ALLOWED_TOOLS, VALIDATED_MIN, LanguageSpec, delete_spec, guide_path, load_spec, safety_problems,
-                        sanitize_id, save_spec, spec_path)
+from .generators import SUPPORT_MODULES
+from .generators.base import MAX_REPAIRS, BaseGeneratorAgent, GenerationRequest
+from .languages import (ALLOWED_TOOLS, VALIDATED_MIN, LanguageSpec, delete_generated, delete_spec, export_generator,
+                        guide_path, is_generated, load_spec, safety_problems, sanitize_id, save_spec, spec_path)
 from .llm import LLMClient, LLMError
 from .textutil import extract_json, strip_think
 from .verify import find_tool, missing_tools
@@ -42,9 +43,8 @@ async def step(emit: Emit, step_id: str, text: str, state: str, detail: str = ""
 
 
 def built_in_ids() -> set[str]:
-    import pkgutil
-    from . import generators
-    return {m.name for m in pkgutil.iter_modules(generators.__path__) if not m.name.startswith("_") and m.name != "base"}
+    from .generators import built_in_ids as generated_ids
+    return generated_ids()
 
 
 def tool_report(tools: list[str]) -> tuple[list[str], list[str]]:
@@ -125,7 +125,7 @@ async def create_language(name: str, settings: Settings, emit: Emit) -> dict:
     lang_id = sanitize_id(name)
     if not lang_id:
         raise SkillError(f"nom de langage inutilisable : {name!r}")
-    if lang_id in built_in_ids():
+    if lang_id in built_in_ids() or lang_id in SUPPORT_MODULES:
         raise SkillError(f"« {name} » est déjà disponible dans le menu")
     existing = load_spec(lang_id)
     if existing is not None and existing.status != "draft":
@@ -185,28 +185,20 @@ async def check_language(language_id: str, settings: Settings, emit: Emit, llm: 
 # ---------------------------------------------------------------------------------- skill 3 : valider un agent de conversion
 
 def build_agent(language_id: str) -> tuple[BaseGeneratorAgent, LanguageSpec | None]:
-    import importlib
-    import importlib.util
+    """Agent d'un langage intégré (generators/<id>.py) ou d'un brouillon en cours de validation."""
     if language_id in built_in_ids():
-        module = importlib.import_module(f"umlfactory.generators.{language_id}")
-        import inspect
-        found = [c for _, c in inspect.getmembers(module, inspect.isclass)
-                 if issubclass(c, BaseGeneratorAgent) and c is not BaseGeneratorAgent
-                 and c.__module__ == module.__name__ and not inspect.isabstract(c)]
-        if len(found) != 1:
-            raise SkillError(f"{language_id}.py doit définir exactement un agent")
-        return found[0](), None
+        from .generators import agent_class
+        return agent_class(language_id)(), None
     spec = load_spec(language_id)
     if spec is None:
         raise SkillError(f"langage inconnu : {language_id}")
-    from .generators._declarative import DeclarativeGenerator
     return DeclarativeGenerator(spec), spec
 
 
 async def _run_reference(agent: BaseGeneratorAgent, ref: Reference, llm: LLMClient, settings: Settings) -> dict:
     started = time.monotonic()
     try:
-        result = await agent.generate(GenerationRequest(puml=ref.puml), llm, 1, settings.max_repairs, None,
+        result = await agent.generate(GenerationRequest(puml=ref.puml), llm, 1, MAX_REPAIRS, None,
                                       settings.verify_budget or 10.0)
     except (LLMError, ValidationError, ValueError) as exc:
         return {"id": ref.id, "title": ref.title, "score": 0, "files": 0, "seconds": time.monotonic() - started,
@@ -281,33 +273,31 @@ async def validate_language(language_id: str, approve: bool, quick: bool, settin
             await step(emit, "refine", "Amélioration des règles impossible", "warn", str(exc)[:120])
             break
         spec.plan_rules, spec.style_rules = plan_rules, style_rules      # jamais la commande : elle a été approuvée
-        agent, _ = build_agent_from(spec)
+        agent = DeclarativeGenerator(spec)
         await step(emit, "refine", "Règles de génération améliorées", "done", f"nouvel essai sur {len(weak)} diagramme(s)")
         refined = True
         await asyncio.gather(*(one(next(r for r in refs if r.id == w["id"])) for w in weak))
 
     mean = round(sum(r["score"] for r in results.values()) / max(1, len(results)))
     status = "validated" if mean >= VALIDATED_MIN else "experimental"
+    written = None
     if spec is not None:
         spec.score, spec.status, spec.approved = mean, status, True
-        save_spec(spec)
+        written = export_generator(spec)                 # agent final : generators/<id>.py, supprime le brouillon
     label = "validé" if status == "validated" else "expérimental (score insuffisant)"
     return {
         "language": language_id, "score": mean, "status": status, "refined": refined, "quick": quick,
         "threshold": VALIDATED_MIN, "diagrams": [results[r.id] for r in refs if r.id in results],
         "summary": f"{agent.display_name} : {mean}/100 — {label}",
+        "file": str(written) if written else None,
     }
 
 
-def build_agent_from(spec: LanguageSpec) -> tuple[BaseGeneratorAgent, LanguageSpec]:
-    from .generators._declarative import DeclarativeGenerator
-    return DeclarativeGenerator(spec), spec
-
-
 def discard_language(language_id: str) -> dict:
-    if language_id in built_in_ids():
-        raise SkillError("un langage intégré ne peut pas être supprimé")
-    if not spec_path(language_id).exists():
-        raise SkillError(f"aucune spécification pour « {language_id} »")
+    if language_id in built_in_ids() and not is_generated(language_id):
+        raise SkillError("un langage écrit à la main ne peut pas être supprimé d'ici : supprimez son fichier")
+    if not spec_path(language_id).exists() and not is_generated(language_id):
+        raise SkillError(f"aucun langage ajouté nommé « {language_id} »")
     delete_spec(language_id)
-    return {"summary": f"spécification de « {language_id} » supprimée"}
+    delete_generated(language_id)
+    return {"summary": f"langage « {language_id} » supprimé"}

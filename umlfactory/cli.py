@@ -13,16 +13,18 @@ import argparse
 import asyncio
 import contextlib
 import json
+import os
 import sys
+import textwrap
 import time
 from pathlib import Path
 
 import httpx
 from a2a.client import A2ACardResolver
 
-from . import ui
+from . import providers, ui
 from .a2a_common import AgentFailed, call_agent
-from .config import ConfigError, describe, load_env_file, load_settings
+from .config import KEY_VARS, ConfigError, describe, load_env_file, load_settings, mask_key
 
 
 class CliError(RuntimeError):
@@ -50,6 +52,9 @@ async def list_languages(card) -> tuple[list[tuple[str, str]], dict[str, list[st
 
 async def call_steps(card, payload: dict, term: ui.Term) -> dict:
     """Appelle une action du coordinateur et affiche ses étapes en direct ; renvoie son rapport."""
+    provider = os.environ.get("UMLFACTORY_PROVIDER")      # fixé par providers.resolve() au lancement
+    if provider and "provider" not in payload:
+        payload = {**payload, "provider": provider}
     view = ui.StepView(term)
     view.start()
     try:
@@ -89,22 +94,29 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
         report = await call_steps(card, {"action": "check_language", "language_id": lid}, term)
 
     print()
-    print(term.bold("Commande de vérification proposée") + term.dim(" (lancée sur votre machine, sans votre clé d'API, 10 s maximum) :"))
+    print(term.bold(f"Contrôle du code {lang['name']} généré"))
+    print(term.dim("  Pour vérifier chaque fichier produit, l'outil lancera cette commande sur votre PC "
+                   "({file} = le fichier à contrôler ; sans votre clé d'API, 10 s maximum) :"))
     print("  " + term.cyan(lang["build"] or "(aucune : seule la syntaxe de base sera contrôlée)"))
     if lang.get("scaffold"):
         print(term.dim("  Fichiers de projet ajoutés : " + ", ".join(lang["scaffold"])))
     if lang.get("sensitive_calls"):
-        print(term.dim("  Code refusé s'il contient : " + ", ".join(lang["sensitive_calls"][:8])))
+        print(term.dim("  Le code sera aussi refusé s'il contient des appels dangereux, par exemple : "
+                       + ", ".join(lang["sensitive_calls"][:8])))
     if not approve:
         if not interactive:
             raise CliError("commande de vérification non approuvée : ajouter --approve pour l'autoriser")
-        if not ui.confirm(term, "Autoriser cette commande ?", default=True):
+        if not ui.confirm(term, "Autoriser cette commande de contrôle ?", default=True):
             print("Annulé. La spécification reste en brouillon (rien n'a été exécuté).")
             return None
 
     quick = True
     if interactive:
-        quick = ui.confirm(term, "Validation rapide (3 diagrammes, quelques minutes) plutôt que complète (6 diagrammes) ?",
+        print()
+        print(term.bold(f"Test du nouveau langage {lang['name']}"))
+        print(term.dim("  Avant de l'ajouter au menu, l'agent convertit des diagrammes d'exemple pour prouver "
+                       "qu'il produit du code correct."))
+        quick = ui.confirm(term, "Test rapide (3 diagrammes, quelques minutes) ? Non = test complet (6 diagrammes)",
                            default=True)
     print(term.dim("Validation de l'agent : il convertit des diagrammes de référence, puis le code est compilé et contrôlé."))
     result = await call_steps(card, {"action": "validate_language", "language_id": lid, "approve": True,
@@ -116,7 +128,10 @@ async def add_language(card, term: ui.Term, name: str | None, interactive: bool,
         for w in d.get("warnings", [])[:2]:
             print(term.dim("           ! " + w.splitlines()[0][:110]))
     if result["status"] == "validated":
-        print(term.green(f"✔ {lang['name']} validé : {result['score']}/100 — disponible dans le menu."))
+        print(term.green(f"✔  {lang['name']} validé : {result['score']}/100 — disponible dans le menu."))
+        if result.get("file"):
+            print(term.dim(f"   Agent créé : {Path(result['file']).relative_to(Path.cwd()) if Path(result['file']).is_relative_to(Path.cwd()) else result['file']} "
+                           "(modifiable à la main ; supprimer ce fichier retire le langage)"))
         return lid
     print(term.yellow(f"! {lang['name']} : {result['score']}/100, sous le seuil de {result['threshold']} (langage « expérimental »)."))
     if interactive and ui.confirm(term, "Garder ce langage malgré tout ?", default=False):
@@ -144,6 +159,13 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
 
     interactive = sys.stdin.isatty() and term.tty
 
+    # 0. fournisseur de modèles : les clés présentes sont testées, une seule valide suffit
+    try:
+        chosen = await providers.resolve(term, interactive, args.provider, args.reset_model)
+    except ConfigError as exc:
+        raise CliError(str(exc)) from exc
+    print(term.dim(f"Modèle : {chosen.label} · {KEY_VARS[chosen.provider]} {mask_key(chosen.key)} · {chosen.model}"))
+
     async def refresh() -> None:
         nonlocal options, missing, ids, names
         options, missing = await list_languages(card)
@@ -161,8 +183,7 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
     if not model:
         if not interactive:
             raise CliError("fichier PlantUML manquant (premier argument)")
-        guess = next((c for c in ("model.puml", "examples/model.puml") if Path(c).is_file()), None)
-        model = ui.ask(term, "Fichier PlantUML (.puml)", guess)
+        model = ui.choose_puml(term, next((c for c in ("model.puml",) if Path(c).is_file()), None))
     model_path = Path(model).expanduser().resolve()
     if not model_path.is_file():
         raise CliError(f"fichier introuvable : {model_path}")
@@ -177,21 +198,25 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
     elif not args.ask and not languages:
         if not interactive:
             raise CliError(f"préciser --lang parmi : {', '.join(sorted(ids))}")
-        languages = ui.choose_languages(term, options, allow_new=True)
-        if ui.NEW_LANGUAGE in languages:
-            languages.remove(ui.NEW_LANGUAGE)
-            lid = await add_language(card, term, None, interactive, args.approve)
-            if lid is None:
-                return 1
-            await refresh()
-            languages.append(lid)
+        chosen_langs = ui.choose_languages(term, options, allow_new=True)
+        languages = []
+        for entry in chosen_langs:
+            if entry.startswith(ui.NEW_LANGUAGE):
+                new_name = entry.partition(":")[2] or None
+                lid = await add_language(card, term, new_name, interactive, args.approve)
+                if lid is None:
+                    return 1
+                await refresh()
+                entry = lid
+            languages.append(entry)
 
     # 3. destination
     out = args.out
     if not out:
         if not interactive:
             raise CliError("dossier de destination manquant (--out)")
-        out = ui.ask(term, "Dossier de destination", "./sortie")
+        print(term.dim("  Par défaut, le code est écrit dans le dossier ./sortie (créé s'il n'existe pas)."))
+        out = ui.ask(term, "Dossier de destination (Entrée = ./sortie)", "./sortie")
     out_dir = Path(out).expanduser().resolve()
 
     for lid in languages or []:         # la vérification d'exécution a besoin d'outils présents sur CET appareil
@@ -199,7 +224,8 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
             print(term.yellow(f"! {names.get(lid, lid)} : {', '.join(missing[lid])} introuvable sur cet appareil. "
                               "Le code sera généré mais ni compilé ni exécuté."))
 
-    payload: dict = {"puml_path": str(model_path), "output_dir": str(out_dir), "layout": args.layout}
+    payload: dict = {"puml_path": str(model_path), "output_dir": str(out_dir), "layout": args.layout,
+                     "provider": chosen.provider}
     if languages:
         payload["languages"] = languages
     if args.ask:
@@ -249,7 +275,11 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
         check = info.get("verification") or {}
         if check.get("score") is not None:
             color = term.green if check["score"] >= 80 else (term.yellow if check["score"] >= 50 else term.red)
-            print("   " + color(f"fiabilité {check['score']}/100") + term.dim(f" · vérifiée en {check['seconds']}s"))
+            print("   " + color(f"fiabilité {check['score']}/100")
+                  + term.dim(f" · vérifiée en {ui.fmt_seconds(check['seconds'])}"))
+            if check.get("explanation"):
+                for ln in textwrap.wrap(check["explanation"], max(40, term.width - 5)):
+                    print(term.dim("   " + ln))
         for w in info.get("warnings", []):
             print(term.yellow("   ! " + w.replace("\n", "\n     ")))
     for lid, reason in report.get("failed", {}).items():
@@ -276,6 +306,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="autorise sans demander la commande de vérification d'un langage ajouté")
     parser.add_argument("--coordinator", help="URL du coordinateur (défaut : COORDINATOR_URL)")
     parser.add_argument("--spawn", action="store_true", help="démarre la pile locale pour la durée de l'appel")
+    parser.add_argument("--reset-model", action="store_true",
+                        help="oublie le fournisseur mémorisé et le redemande")
+    parser.add_argument("--provider", choices=["openai", "anthropic"],
+                        help="fournisseur de modèles à utiliser (sinon : testé et choisi au lancement)")
     return parser
 
 
@@ -286,8 +320,6 @@ def main() -> int:
     term = ui.Term()
     try:
         settings = load_settings(require_api=False)
-        if not args.list_languages:
-            print(term.dim(describe(settings)))
         stack = contextlib.nullcontext()
         status = None
         if args.spawn:
@@ -307,7 +339,7 @@ def main() -> int:
             with stack:
                 if status:
                     status.__exit__(None, None, None)
-                    print(term.green("✔") + " Pile prête")
+                    print(term.green("✔ ") + " Pile prête")
                     status = None
                 return asyncio.run(run(args, term))
         finally:

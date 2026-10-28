@@ -7,4 +7,5 @@ logs/
 out/
 sortie/
 .tmp/
-umlfactory/langspecs/*.install.txt
+umlfactory/.drafts/
+.umlfactory.json

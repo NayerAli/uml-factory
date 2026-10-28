@@ -1,4 +1,4 @@
-"""Agent générateur piloté par une SPÉCIFICATION (umlfactory/langspecs/<id>.json) : aucun code propre au langage.
+"""Socle des agents de langage « simples » : règles de génération + commande de vérification, sans code propre au langage.
 
 Le préfixe « _ » exclut ce fichier de la liste des langages (il n'est pas un langage lui-même).
 """
@@ -8,8 +8,9 @@ from __future__ import annotations
 import re
 import tempfile
 from pathlib import Path, PurePosixPath
+from typing import ClassVar
 
-from ..languages import LanguageSpec, forbidden_generated
+from ..languages import LanguageSpec, forbidden_generated, safety_problems
 from ..verify import Runtime, VerifyContext, VerifyReport, clean_env, compute_score, find_tool, run, write_tree
 from .base import BaseGeneratorAgent, Validation
 
@@ -95,7 +96,41 @@ class CommandRuntime(Runtime):
         return self.finish(ctx, report)
 
 
-class DeclarativeGenerator(BaseGeneratorAgent):
+class CommandGenerator(BaseGeneratorAgent):
+    """Base des agents de langage simples : des attributs de classe, aucune logique propre au langage.
+
+    Un fichier `generators/<id>.py` créé par « Autre langage… » (ou écrit à la main) n'a qu'à déclarer ces attributs.
+    La commande de vérification reste soumise aux mêmes garde-fous que les spécifications (liste de compilateurs).
+    """
+
+    tools: ClassVar[tuple[str, ...]] = ()
+    build: ClassVar[tuple[str, ...]] = ()                 # argv, avec {file}, {files} et {dir}
+    scaffold: ClassVar[dict[str, str]] = {}
+    sensitive_calls: ClassVar[tuple[str, ...]] = ()
+    status: ClassVar[str] = "validated"
+    score: ClassVar[int | None] = None
+
+    def to_spec(self) -> LanguageSpec:
+        return LanguageSpec(
+            id=self.language, display_name=self.display_name, file_extensions=list(self.file_extensions),
+            source_media_type=self.source_media_type, plan_rules=self.plan_rules, style_rules=self.style_rules,
+            tools=list(self.tools), build=list(self.build), scaffold=dict(self.scaffold),
+            sensitive_calls=list(self.sensitive_calls), status=self.status, approved=True, score=self.score)
+
+    def runtime(self) -> Runtime:
+        spec = self.to_spec()
+        problems = safety_problems(spec)
+        if problems:
+            raise RuntimeError(f"agent « {self.language} » refusé : " + " ; ".join(problems))
+        return CommandRuntime(spec)
+
+    def validate(self, files: dict[str, str]) -> Validation:
+        return Validation()          # contrôle statique minimal : la vérification se fait par la commande
+
+
+class DeclarativeGenerator(CommandGenerator):
+    """Agent d'un brouillon de langage, le temps de sa validation (avant l'écriture de generators/<id>.py)."""
+
     def __init__(self, spec: LanguageSpec) -> None:
         self.spec = spec
         self.language = spec.id
@@ -104,10 +139,7 @@ class DeclarativeGenerator(BaseGeneratorAgent):
         self.source_media_type = spec.source_media_type
         self.plan_rules = spec.plan_rules
         self.style_rules = spec.style_rules.strip() + "\n"
+        self.tools, self.build = tuple(spec.tools), tuple(spec.build)
+        self.scaffold, self.sensitive_calls = dict(spec.scaffold), tuple(spec.sensitive_calls)
+        self.status, self.score = spec.status, spec.score
         self.version = f"spec-{spec.status}"
-
-    def runtime(self) -> Runtime:
-        return CommandRuntime(self.spec)
-
-    def validate(self, files: dict[str, str]) -> Validation:
-        return Validation()          # contrôle statique minimal : la vérification se fait par la commande

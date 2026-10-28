@@ -262,7 +262,8 @@ def findings_to_report(ctx: VerifyContext, findings: list[Finding], compile_frac
 
     `executed=False` : le code n'a pas pu être chargé (compilation en échec) ; les paliers suivants comptent 0."""
     def frac(kinds: set[str]) -> float | None:
-        rows = [f for f in findings if f.kind in kinds and f.level in ("OK", "FAIL")]
+        # un contrôle SKIP (classe jamais chargée, module en échec) n'est pas une réussite : il compte comme un échec
+        rows = [f for f in findings if f.kind in kinds and f.level in ("OK", "FAIL", "SKIP")]
         return None if not rows else sum(1 for f in rows if f.level == "OK") / len(rows)
 
     for f in findings:
@@ -279,6 +280,9 @@ def findings_to_report(ctx: VerifyContext, findings: list[Finding], compile_frac
     conformity = frac({"class", "extends", "attr", "op", "rel"})
     if not executed:
         smoke = conformity = 0.0
-    report.score = compute_score([(10, 1.0), (40, compile_frac), (25, 1.0 if smoke is None else smoke),
-                                  (25, 1.0 if conformity is None else conformity)])
+    # aucune classe dans le diagramme : rien à contrôler (100 %) ; des classes sans aucun contrôle exécuté : 0 %
+    nothing_to_check = not any(f.kind == "class" for f in findings)
+    no_evidence = 1.0 if nothing_to_check else 0.0
+    report.score = compute_score([(10, 1.0), (40, compile_frac), (25, no_evidence if smoke is None else smoke),
+                                  (25, no_evidence if conformity is None else conformity)])
     return report

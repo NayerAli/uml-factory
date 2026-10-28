@@ -1,79 +1,15 @@
-"""Affichage terminal : progression en direct façon Claude Code / Codex, menus et questions.
-
-Sans terminal interactif (redirection, CI), tout se dégrade en lignes de texte simples.
-"""
+"""Progression à l'écran : génération (LiveView), étapes d'une tâche longue (StepView), ligne d'attente."""
 
 from __future__ import annotations
 
 import asyncio
-import os
-import shutil
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
 
+from .term import Term, char_width, clean, fit, fmt_seconds, fmt_size, fmt_time, text_width
+
 SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-
-class Term:
-    def __init__(self) -> None:
-        for stream in (sys.stdout, sys.stderr):
-            try:
-                stream.reconfigure(encoding="utf-8", errors="replace")   # type: ignore[union-attr]
-            except (AttributeError, ValueError):
-                pass
-        self.tty = sys.stdout.isatty()
-        self.color = self.tty and not os.environ.get("NO_COLOR")
-        if os.name == "nt" and self.tty:
-            self._enable_windows_ansi()
-
-    @staticmethod
-    def _enable_windows_ansi() -> None:
-        try:
-            import ctypes
-            kernel = ctypes.windll.kernel32            # type: ignore[attr-defined]
-            handle = kernel.GetStdHandle(-11)
-            mode = ctypes.c_uint32()
-            if kernel.GetConsoleMode(handle, ctypes.byref(mode)):
-                kernel.SetConsoleMode(handle, mode.value | 0x0004)   # ENABLE_VIRTUAL_TERMINAL_PROCESSING
-        except Exception:  # noqa: BLE001
-            pass
-
-    @property
-    def width(self) -> int:
-        return max(40, shutil.get_terminal_size((100, 30)).columns - 1)
-
-    @property
-    def height(self) -> int:
-        return shutil.get_terminal_size((100, 30)).lines
-
-    def paint(self, code: str, text: str) -> str:
-        return f"\x1b[{code}m{text}\x1b[0m" if self.color else text
-
-    def dim(self, t: str) -> str: return self.paint("2", t)
-    def green(self, t: str) -> str: return self.paint("32", t)
-    def red(self, t: str) -> str: return self.paint("31", t)
-    def yellow(self, t: str) -> str: return self.paint("33", t)
-    def cyan(self, t: str) -> str: return self.paint("36", t)
-    def bold(self, t: str) -> str: return self.paint("1", t)
-
-    def write(self, text: str) -> None:
-        sys.stdout.write(text)
-        sys.stdout.flush()
-
-
-def fmt_time(seconds: float) -> str:
-    s = int(seconds)
-    return f"{s}s" if s < 60 else f"{s // 60}m{s % 60:02d}s"
-
-
-def fmt_chars(n: int) -> str:
-    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
-
-
-def fit(text: str, width: int) -> str:
-    return text if len(text) <= width else text[: max(1, width - 1)] + "…"
 
 
 # ------------------------------------------------------------------ ligne d'état (démarrage)
@@ -188,7 +124,7 @@ class LiveView:
     def _badge_plain(lang: LangView) -> str:
         if lang.score is None:
             return f"code non exécuté ({lang.verify_note})" if lang.verify_note else ""
-        return f"fiabilité {int(lang.score)}/100" + (f" (vérifiée en {float(lang.verified_in):.1f}s)" if lang.verified_in is not None else "")
+        return f"fiabilité {int(lang.score)}/100" + (f" · vérifiée en {fmt_seconds(float(lang.verified_in))}" if lang.verified_in is not None else "")
 
     def _badge(self, lang: LangView) -> str:
         t = self.term
@@ -224,10 +160,10 @@ class LiveView:
         f.preview = str(e.get("preview", f.preview) or "")
         if state == "done":
             f.ended = now
-            self._log(("done", lang.id, path, f.fixing), f"  ✔ {path} ({fmt_chars(f.chars)} car.)")
+            self._log(("done", lang.id, path, f.fixing), f"  ✔  {path} ({fmt_size(f.chars)})")
         elif state == "error":
-            f.detail = str(e.get("detail", ""))
-            self._log(("error", lang.id, path, f.detail), f"  ✘ {path} : {f.detail}")
+            f.detail = clean(str(e.get("detail", "")))
+            self._log(("error", lang.id, path, f.detail), f"  ✘  {path} : {f.detail}")
 
     def _log(self, key: tuple, text: str) -> None:
         if not self.term.tty and key not in self._printed:
@@ -240,21 +176,25 @@ class LiveView:
         t = self.term
         elapsed = fmt_time((f.ended or time.monotonic()) - f.began) if f.began else ""
         if f.state == "done":
-            return f"  {t.green('✔')} {name} {t.dim(f'{fmt_chars(f.chars)} car. · {elapsed}')}"
+            return f"  {t.green('✔ ')} {name} {t.dim(f'{fmt_size(f.chars)} · {elapsed}')}"
         if f.state == "error":
-            return f"  {t.red('✘')} {name} {t.red(f.detail)}"
+            return f"  {t.red('✘ ')} {name} {t.red(f.detail)}"
         if f.state == "wait":
-            return f"  {t.dim('·')} {t.dim(name)}"
+            return f"  {t.dim('· ')} {t.dim(name)}"
         verb = {"start": "en attente du modèle", "thinking": "réflexion", "writing": "écriture",
                 "fix": "correction"}.get(f.state, f.state)
         if f.fixing and f.state in ("thinking", "writing"):
             verb = "correction · " + verb
-        extra = f"{fmt_chars(f.chars)} car." if f.chars else (f"{fmt_chars(f.thought)} car. pensés" if f.thought else "")
-        head = f"  {t.cyan(spin)} {name} {t.dim(' · '.join(x for x in (verb, extra, elapsed) if x))}"
-        if f.preview and f.state == "writing":
-            room = t.width - len(f"  x {name} {verb} {extra} {elapsed}") - 8
+        if f.state == "thinking":
+            extra = f"réflexion · {fmt_size(f.thought)}" if f.thought else ""
+        else:
+            extra = fmt_size(f.chars) if f.chars else ""
+        head = f"  {t.cyan(spin + ' ')} {name} {t.dim(' · '.join(x for x in (verb, extra, elapsed) if x))}"
+        preview = clean(f.preview)
+        if preview and f.state == "writing":
+            room = t.width - text_width(f"  x {name} {verb} {extra} {elapsed}") - 6
             if room > 12:
-                head += "  " + t.dim("↳ " + fit(f.preview.strip(), room))
+                head += "  " + t.dim("↳ " + fit(preview, room))
         return head
 
     def lines(self) -> list[str]:
@@ -262,15 +202,15 @@ class LiveView:
         spin = SPIN[self._frame % len(SPIN)]
         out: list[str] = []
         total = fmt_time(now - self.began)
-        out.append(f"{t.cyan(spin)} {t.bold(self.phase)} {t.dim('· ' + total)}")
+        out.append(f"{t.cyan(spin + ' ')} {t.bold(self.phase)} {t.dim('· ' + total)}")
         budget = t.height - 4
         for lang in self.langs.values():
             if lang.error:
-                icon, tail = t.red("✘"), t.red(lang.error)
+                icon, tail = t.red("✘ "), t.red(lang.error)
             elif lang.ended:
-                icon, tail = t.green("✔"), t.dim(f"{lang.phase} · {fmt_time(lang.ended - lang.began)}") + self._badge(lang)
+                icon, tail = t.green("✔ "), t.dim(f"{lang.phase} · {fmt_time(lang.ended - lang.began)}") + self._badge(lang)
             else:
-                icon, tail = t.cyan(spin), t.dim(f"{lang.phase} · {fmt_time(now - lang.began)}") + self._badge(lang)
+                icon, tail = t.cyan(spin + " "), t.dim(f"{lang.phase} · {fmt_time(now - lang.began)}") + self._badge(lang)
             out.append(f"{icon} {t.bold(lang.name)} {tail}")
             shown = list(lang.files.items())
             room = max(3, budget // max(1, len(self.langs)))
@@ -279,7 +219,7 @@ class LiveView:
                 active = [(n, f) for n, f in shown if f.state != "done"]
                 shown = active[:room - 1]
                 if finished:
-                    out.append(f"  {t.green('✔')} {t.dim(f'{len(finished)} fichier(s) terminé(s)')}")
+                    out.append(f"  {t.green('✔ ')} {t.dim(f'{len(finished)} fichier(s) terminé(s)')}")
             for name, f in shown:
                 out.append(self._file_line(name, f, spin))
         return [fit_ansi(line, t.width) for line in out]
@@ -289,7 +229,7 @@ class LiveView:
             return
         lines = self.lines()
         if final:
-            lines[0] = f"{self.term.green('✔')} {self.term.bold('Terminé')} {self.term.dim('· ' + fmt_time(time.monotonic() - self.began))}"
+            lines[0] = f"{self.term.green('✔ ')} {self.term.bold('Terminé')} {self.term.dim('· ' + fmt_time(time.monotonic() - self.began))}"
         buf = (f"\x1b[{self._drawn}A" if self._drawn else "") + "".join(f"\r\x1b[2K{ln}\n" for ln in lines) + "\x1b[J"
         self._drawn = len(lines)
         self.term.write(buf)
@@ -318,7 +258,7 @@ class LiveView:
 
 
 def fit_ansi(line: str, width: int) -> str:
-    """Tronque une ligne contenant des séquences ANSI sans couper une séquence."""
+    """Tronque une ligne contenant des séquences ANSI sans couper une séquence, en largeur d'affichage."""
     plain, out, i = 0, [], 0
     while i < len(line):
         if line[i] == "\x1b":
@@ -327,59 +267,14 @@ def fit_ansi(line: str, width: int) -> str:
             out.append(line[i:j + 1])
             i = j + 1
             continue
-        if plain >= width - 1:
+        cw = char_width(line[i])
+        if plain + cw > width - 1:
             out.append("…\x1b[0m")
             break
         out.append(line[i])
-        plain += 1
+        plain += cw
         i += 1
     return "".join(out)
-
-
-# ------------------------------------------------------------------ questions
-
-def ask(term: Term, question: str, default: str | None = None) -> str:
-    suffix = f" [{default}]" if default else ""
-    while True:
-        answer = input(f"{term.cyan('?')} {question}{suffix} : ").strip().strip('"')
-        if answer:
-            return answer
-        if default:
-            return default
-
-
-def confirm(term: Term, question: str, default: bool = False) -> bool:
-    answer = input(f"{term.cyan('?')} {question} [{'O/n' if default else 'o/N'}] : ").strip().lower()
-    return default if not answer else answer in ("o", "oui", "y", "yes")
-
-
-NEW_LANGUAGE = "+new"      # valeur renvoyée par le menu quand l'utilisateur choisit « Autre langage… »
-
-
-def choose_languages(term: Term, options: list[tuple[str, str]], allow_new: bool = False) -> list[str]:
-    """Menu numéroté ; renvoie les identifiants choisis (un ou plusieurs, séparés par des virgules)."""
-    if allow_new:
-        options = [*options, (NEW_LANGUAGE, "Autre langage… (ajouter un nouveau langage)")]
-    print(f"{term.cyan('?')} Langage cible :")
-    for i, (_, name) in enumerate(options, 1):
-        print(f"   {term.bold(str(i))}) {name}")
-    while True:
-        raw = input("  Votre choix (numéro ou nom, plusieurs séparés par des virgules) : ").strip().lower()
-        picked: list[str] = []
-        for token in [t.strip() for t in raw.replace(";", ",").split(",") if t.strip()]:
-            match = None
-            if token.isdigit() and 1 <= int(token) <= len(options):
-                match = options[int(token) - 1][0]
-            else:
-                match = next((lid for lid, name in options if token in (lid.lower(), name.lower())), None)
-            if match is None:
-                picked = []
-                print(term.red(f"  « {token} » n'est pas dans la liste."))
-                break
-            if match not in picked:
-                picked.append(match)
-        if picked:
-            return picked
 
 
 # ------------------------------------------------------------------ étapes d'une tâche longue
@@ -418,7 +313,7 @@ class StepView:
 
     def _icon(self, row: StepRow, spin: str) -> str:
         t = self.term
-        return {"done": t.green("✔"), "warn": t.yellow("!"), "fail": t.red("✘")}.get(row.state, t.cyan(spin))
+        return {"done": t.green("✔ "), "warn": t.yellow("! "), "fail": t.red("✘ ")}.get(row.state, t.cyan(spin + " "))
 
     def lines(self) -> list[str]:
         spin = SPIN[self._frame % len(SPIN)]
