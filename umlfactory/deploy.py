@@ -2,6 +2,9 @@
 
     python -m umlfactory.deploy          # au premier plan, Ctrl+C pour tout arrêter
 
+La CLI (`python -m umlfactory.cli`) démarre elle-même cette pile quand elle n'est pas allumée, et l'arrête à la fin.
+Avec `--keep-running` elle la laisse allumée en arrière-plan ; `--stop` l'arrête (voir `stop_stack`).
+
 Les langages sont détectés automatiquement : chaque fichier de umlfactory/generators/ (hors base.py et
 fichiers commençant par « _ ») est un langage et reçoit son agent (java.py, python.py, ou un fichier créé par la CLI), sur un port libre de la plage
 GENERATOR_PORT_RANGE. Les journaux de chaque composant sont écrits dans ./logs/.
@@ -12,6 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import os
+import signal
 import socket
 import subprocess
 import sys
@@ -27,6 +33,7 @@ from .a2a_common import discover_local
 from .config import Settings, describe, load_env_file, load_settings
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+STATE_FILE = ".umlfactory-stack.json"      # composants laissés allumés par `--keep-running` (nom, PID, adresse)
 # (nom, état, détail) avec état = starting | ready | running | failed
 Progress = Callable[[str, str, str], None]
 
@@ -86,8 +93,11 @@ def plan_components(settings: Settings, existing_languages: set[str], used_ports
 
 @contextlib.contextmanager
 def running_stack(settings: Settings | None = None, timeout: float = 90.0, log_dir: str | Path = "logs",
-                  progress: Progress | None = None):
-    """Lance les composants locaux qui ne tournent pas déjà ; les arrête à la sortie."""
+                  progress: Progress | None = None, keep: bool = False):
+    """Lance les composants locaux qui ne tournent pas déjà ; les arrête à la sortie.
+
+    Renvoie la liste des composants démarrés par cet appel. Avec `keep`, ils sont détachés, restent allumés après la
+    sortie et leurs PID sont enregistrés pour `stop_stack`."""
     settings = settings or load_settings(require_api=False)
     say = progress or (lambda *_: None)
     logs = Path(log_dir)
@@ -101,6 +111,11 @@ def running_stack(settings: Settings | None = None, timeout: float = 90.0, log_d
     procs: dict[str, subprocess.Popen] = {}
     handles = []
     started: list[Component] = []
+    kept = False
+    detach: dict = {}
+    if keep:
+        detach = ({"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+                  if os.name == "nt" else {"start_new_session": True})
     try:
         for c in comps:
             if urlparse(c.url).hostname not in LOCAL_HOSTS or is_ready(c):
@@ -110,7 +125,7 @@ def running_stack(settings: Settings | None = None, timeout: float = 90.0, log_d
             handle = open(logs / f"{c.name}.log", "w", encoding="utf-8")
             handles.append(handle)
             procs[c.name] = subprocess.Popen([sys.executable, "-m", *c.command], stdout=handle,
-                                             stderr=subprocess.STDOUT)
+                                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **detach)
             started.append(c)
         deadline = time.time() + timeout
         for c in started:
@@ -118,24 +133,103 @@ def running_stack(settings: Settings | None = None, timeout: float = 90.0, log_d
                 if procs[c.name].poll() is not None:
                     say(c.name, "failed", f"voir {logs / (c.name + '.log')}")
                     if c.name in ("mcp", "coordinator"):
-                        raise RuntimeError(f"{c.name} s'est arrêté au démarrage (voir {logs / (c.name + '.log')})")
+                        raise RuntimeError(f"{c.name} s'est arrêté au démarrage : un autre programme utilise peut-être "
+                                           f"le port {urlparse(c.url).port}. Détails dans {logs / (c.name + '.log')}")
                     break
                 if time.time() > deadline:
                     raise RuntimeError(f"{c.name} n'a pas démarré en {timeout:.0f} s (voir {logs / (c.name + '.log')})")
                 time.sleep(0.2)
             else:
                 say(c.name, "ready", c.url)
-        yield
+        if keep and started:
+            write_state(state_path(logs), [(c.name, procs[c.name].pid, c.url) for c in started])
+            kept = True
+        yield [c.name for c in started]
     finally:
-        for p in procs.values():
-            p.terminate()
-        for p in procs.values():
-            try:
-                p.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                p.kill()
+        if not kept:
+            for p in procs.values():
+                p.terminate()
+            for p in procs.values():
+                try:
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    p.kill()
         for h in handles:
             h.close()
+
+
+# ---------------------------------------------------------------------------------- pile laissée allumée
+
+def state_path(log_dir: str | Path = "logs") -> Path:
+    return Path(log_dir).resolve().parent / STATE_FILE
+
+
+def write_state(path: Path, components: list[tuple[str, int, str]]) -> None:
+    data = {"components": [{"name": n, "pid": pid, "url": url} for n, pid, url in components]}
+    try:
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"impossible d'enregistrer l'état de la pile ({path}) : {exc.strerror or exc}") from exc
+
+
+def read_state(path: Path) -> list[dict] | None:
+    """Composants enregistrés, ou None s'il n'y a rien d'exploitable (fichier absent, illisible ou mal formé)."""
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))["components"]
+        if isinstance(items, list) and all(isinstance(i, dict) and isinstance(i.get("name"), str)
+                                           and isinstance(i.get("pid"), int) and isinstance(i.get("url"), str)
+                                           for i in items):
+            return items
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
+
+
+@dataclass(frozen=True)
+class Stopped:
+    name: str
+    url: str
+    state: str          # stopped | already | failed
+
+    @property
+    def port(self) -> int | None:
+        return urlparse(self.url).port
+
+
+def _is_up(name: str, url: str) -> bool:
+    return is_ready(Component(name, (), url, "mcp" if name == "mcp" else "agent"))
+
+
+def stop_stack(log_dir: str | Path = "logs", timeout: float = 10.0) -> list[Stopped] | None:
+    """Arrête la pile laissée allumée. None : aucune pile enregistrée.
+
+    Un PID n'est arrêté que si l'adresse du composant répond encore (Windows réutilise les PID)."""
+    path = state_path(log_dir)
+    items = read_state(path)
+    if items is None:
+        path.unlink(missing_ok=True)            # fichier mal formé : rien d'exploitable
+        return None
+    results: list[Stopped] = []
+    for item in items:
+        name, pid, url = item["name"], item["pid"], item["url"]
+        if not _is_up(name, url):
+            results.append(Stopped(name, url, "already"))
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            results.append(Stopped(name, url, "failed"))
+            continue
+        deadline = time.time() + timeout
+        while _is_up(name, url) and time.time() < deadline:
+            time.sleep(0.2)
+        results.append(Stopped(name, url, "failed" if _is_up(name, url) else "stopped"))
+    left = [i for i, r in zip(items, results) if r.state == "failed"]
+    if left:
+        path.write_text(json.dumps({"components": left}, indent=2), encoding="utf-8")
+    else:
+        path.unlink(missing_ok=True)
+    return results
 
 
 def main() -> int:
@@ -160,7 +254,7 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nArrêt.")
         return 0
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)
         return 1
 

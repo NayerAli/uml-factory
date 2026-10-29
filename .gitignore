@@ -9,3 +9,4 @@ sortie/
 .tmp/
 umlfactory/.drafts/
 .umlfactory.json
+.umlfactory-stack.json

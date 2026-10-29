@@ -4,7 +4,11 @@
     python -m umlfactory.cli model.puml --lang java --out ./sortie
     python -m umlfactory.cli model.puml --ask "en Python" --out ./sortie
     python -m umlfactory.cli --list-languages
-    python -m umlfactory.cli model.puml --spawn      # démarre la pile le temps de l'appel
+    python -m umlfactory.cli model.puml --keep-running   # laisse la pile allumée après la tâche
+    python -m umlfactory.cli --stop                      # arrête la pile laissée allumée
+
+La pile (serveur MCP, coordinateur, agents) est démarrée automatiquement si elle n'est pas allumée, puis arrêtée à la
+fin de la commande.
 """
 
 from __future__ import annotations
@@ -14,10 +18,13 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import sys
 import textwrap
 import time
+import traceback
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from a2a.client import A2ACardResolver
@@ -36,8 +43,8 @@ async def connect(url: str):
         async with httpx.AsyncClient(timeout=10, trust_env=False) as http:
             return await A2ACardResolver(http, url).get_agent_card()
     except Exception as exc:  # noqa: BLE001
-        raise CliError(f"coordinateur injoignable ({url}) : {exc}\n"
-                       "Lancer la pile avec `python -m umlfactory.deploy` ou ajouter --spawn.") from exc
+        raise CliError(f"le coordinateur ne répond pas ({url}). Vérifiez COORDINATOR_URL dans le fichier .env, "
+                       "ou lancez la pile avec `python -m umlfactory.deploy`.") from exc
 
 
 async def list_languages(card) -> tuple[list[tuple[str, str]], dict[str, list[str]]]:
@@ -320,8 +327,20 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
     return 1 if report.get("failed") else 0
 
 
+class FriendlyParser(argparse.ArgumentParser):
+    """Erreurs d'options en une phrase française, sans le bloc « usage » ni de trace Python."""
+
+    def error(self, message: str):
+        message = re.sub(r"unrecognized arguments: (.*)", r"option inconnue : \1", message)
+        message = re.sub(r"argument (\S+): invalid choice: '([^']*)' \(choose from (.*)\)",
+                         r"\1 : la valeur « \2 » n'existe pas (choix possibles : \3)", message)
+        message = re.sub(r"argument (\S+): expected (one|at least one) argument", r"\1 : une valeur est attendue", message)
+        print(f"Option incorrecte : {message}\nPour voir les options : python -m umlfactory.cli --help", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="umlfactory", description="PlantUML -> code source via agents LLM")
+    parser = FriendlyParser(prog="umlfactory", description="PlantUML -> code source via agents LLM")
     parser.add_argument("model", nargs="?", help="fichier PlantUML (.puml) ; demandé si absent")
     parser.add_argument("-o", "--out", help="dossier de destination ; demandé si absent")
     parser.add_argument("--lang", nargs="+", help="langage(s) cible(s) ; sans cette option, un menu les propose")
@@ -337,12 +356,68 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--approve", action="store_true",
                         help="autorise sans demander la commande de vérification d'un langage ajouté")
     parser.add_argument("--coordinator", help="URL du coordinateur (défaut : COORDINATOR_URL)")
-    parser.add_argument("--spawn", action="store_true", help="démarre la pile locale pour la durée de l'appel")
+    parser.add_argument("--keep-running", action="store_true",
+                        help="laisse la pile allumée en arrière-plan après la tâche (arrêt : --stop)")
+    parser.add_argument("--stop", action="store_true", help="arrête la pile laissée allumée par --keep-running")
     parser.add_argument("--reset-model", action="store_true",
                         help="oublie le fournisseur mémorisé et le redemande")
     parser.add_argument("--provider", choices=["openai", "anthropic"],
                         help="fournisseur de modèles à utiliser (sinon : testé et choisi au lancement)")
     return parser
+
+
+STACK_LABELS = {"mcp": "serveur MCP", "coordinator": "coordinateur"}
+
+
+def stack_label(name: str, url: str) -> str:
+    port = urlparse(url).port
+    label = STACK_LABELS.get(name, f"agent {name}")
+    return f"{label} (port {port})" if port else label
+
+
+def stack_needed(url: str, is_up=None) -> bool:
+    """Faut-il démarrer la pile ? Seulement si le coordinateur est local et ne répond pas."""
+    from .deploy import LOCAL_HOSTS, Component, is_ready
+    if urlparse(url).hostname not in LOCAL_HOSTS:
+        return False                      # coordinateur distant : on ne démarre rien
+    if is_up is None:
+        return not is_ready(Component("coordinator", (), url, "agent"))
+    return not is_up(url)
+
+
+def stop_command(term: ui.Term, settings) -> int:
+    """`--stop` : arrête la pile laissée allumée, en disant ce qui a été trouvé."""
+    from .deploy import stop_stack
+    results = stop_stack()
+    if not results:
+        print("Aucune pile UML Factory n'était active (rien à arrêter).")
+        if not stack_needed(settings.coordinator_url):
+            print(term.dim("  Un coordinateur répond pourtant : il a été lancé avec `python -m umlfactory.deploy`. "
+                           "Arrêtez-le avec Ctrl+C dans son terminal."))
+        return 1
+    stopped = [r for r in results if r.state == "stopped"]
+    print("Pile trouvée : " + ", ".join(stack_label(r.name, r.url) for r in results))
+    for r in results:
+        mark = {"stopped": term.green("✔ arrêté"), "already": term.dim("• déjà arrêté"),
+                "failed": term.red("✘ n'a pas pu être arrêté")}[r.state]
+        print(f"  {mark:<28} {stack_label(r.name, r.url)}")
+    if any(r.state == "failed" for r in results):
+        print(term.red("Une partie de la pile tourne encore : fermez le processus à la main puis relancez --stop."),
+              file=sys.stderr)
+        return 1
+    print(term.green("✔ ") + (f"Pile arrêtée ({len(stopped)} composant(s))." if stopped else "Plus rien n'était actif."))
+    return 0
+
+
+def log_crash(exc: BaseException) -> str:
+    """Écrit la trace complète dans logs/erreur.log et renvoie le chemin (l'utilisateur ne voit pas la trace)."""
+    path = Path("logs") / "erreur.log"
+    try:
+        path.parent.mkdir(exist_ok=True)
+        path.write_text("".join(traceback.format_exception(exc)), encoding="utf-8")
+    except OSError:
+        return "(journal indisponible)"
+    return str(path)
 
 
 def main() -> int:
@@ -352,11 +427,16 @@ def main() -> int:
     term = ui.Term()
     try:
         settings = load_settings(require_api=False)
+        if args.stop:
+            if args.keep_running:
+                raise CliError("--stop et --keep-running ne vont pas ensemble : choisissez l'un des deux.")
+            return stop_command(term, settings)
+        url = args.coordinator or settings.coordinator_url
         stack = contextlib.nullcontext()
         status = None
-        if args.spawn:
+        if stack_needed(url):
             from .deploy import running_stack
-            status = ui.StatusLine(term, "Démarrage de la pile (MCP, coordinateur, agents)")
+            status = ui.StatusLine(term, "Démarrage de la pile (serveur MCP, coordinateur, agents)")
             ready: list[str] = []
 
             def progress(name: str, state: str, detail: str) -> None:
@@ -366,22 +446,34 @@ def main() -> int:
                     status.set(f"Démarrage de la pile · prêts : {', '.join(ready) or 'aucun'}")
 
             status.__enter__()
-            stack = running_stack(settings, progress=progress)
+            stack = running_stack(settings, progress=progress, keep=args.keep_running)
+        elif args.keep_running:
+            print(term.dim("La pile est déjà allumée : rien à démarrer."))
+        started: list[str] = []
         try:
-            with stack:
+            with stack as started_now:
+                started = started_now or []
                 if status:
                     status.__exit__(None, None, None)
                     print(term.green("✔ ") + " Pile prête")
                     status = None
-                return asyncio.run(run(args, term))
+                code = asyncio.run(run(args, term))
         finally:
             if status:
                 status.__exit__(None, None, None)
+        if args.keep_running and started:
+            print(term.green("✔ ") + "La pile reste allumée en arrière-plan. Pour l'arrêter : "
+                  "python -m umlfactory.cli --stop")
+        return code
     except KeyboardInterrupt:
         print("\nInterrompu.")
         return 130
     except (CliError, ConfigError, RuntimeError) as exc:
         print(term.red(f"Erreur : {exc}"), file=sys.stderr)
+        return 1
+    except Exception as exc:  # noqa: BLE001 - l'utilisateur ne doit jamais voir une trace Python brute
+        print(term.red(f"Erreur inattendue : {type(exc).__name__}: {exc}\n"
+                       f"Le détail technique est dans {log_crash(exc)}"), file=sys.stderr)
         return 1
 
 
