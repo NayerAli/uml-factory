@@ -1,0 +1,12 @@
+# Script voix off V5 : une ligne par scène (affichage ‖ texte ElevenLabs avec balises)
+1|Onze classes. Votre conception est prête. Et maintenant… il faut tout retaper.
+2|Sans outil, chaque classe se recopie à la main. Fichier après fichier. Puis on recommence, pour chaque langage. Même UML. Même travail. Encore et encore.
+3|UML Factory LLM. Votre diagramme PlantUML. Le code, écrit et vérifié.
+4|Le principe tient en trois gestes. Un : je choisis mon diagramme. Deux : mon langage cible. Un seul, le plus souvent, ou plusieurs si besoin. Trois : je lance. Chaque fichier écrit allume sa classe, puis le code est vérifié. Et si je le voulais… en PHP ?
+5|Regardez le même diagramme. L'héritage devient extends. L'interface devient implements. Les attributs deviennent des champs, avec leurs accesseurs. Les relations deviennent des listes.
+6|Sous le capot, trois idées. Un coordinateur et un agent par langage, qui dialoguent avec le protocole agent to agent. Un serveur MCP, chargé de lire le diagramme et d'écrire les fichiers. Et une structure évolutive : un langage, c'est un fichier d'agent. Le noyau ne change pas.
+7|Retour à PHP. Le menu propose Java et Python… pas de PHP. Je choisis « Autre langage », et je tape PHP. Le LLM rédige seulement des données : les règles du langage. Rien ne s'exécute sans mon accord. L'agent est testé sur des diagrammes de référence : cent sur cent. Un fichier créé, et PHP rejoint le menu.
+8|Même diagramme. Cette fois, en PHP. Onze fichiers. Vérifiés. Conformes au diagramme.
+9|Les contraintes sont tenues. Évolutivité : un langage de plus, sans toucher au noyau. Pertinence : le code suit le diagramme, élément par élément. Fiabilité : compilé, instancié, comparé au diagramme. Robustesse : délais, chemins contrôlés, erreurs annoncées.
+10|Soyons pragmatiques : voici les limites. Le modèle n'est pas déterministe : deux exécutions, deux codes différents. Le diagramme ne décrit pas le comportement : les méthodes restent à écrire. Le code est testé sur votre machine, sans bac à sable : réservé aux diagrammes de confiance. Et le diagramme est envoyé à l'API du modèle.
+11|UML Factory LLM. Du modèle au code. Avec un retour clair.

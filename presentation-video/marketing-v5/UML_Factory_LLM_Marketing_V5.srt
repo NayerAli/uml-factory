@@ -1,0 +1,147 @@
+1
+00:00:00,450 --> 00:00:03,249
+Onze classes. Votre conception est prête.
+
+2
+00:00:03,440 --> 00:00:07,130
+Et maintenant… il faut tout retaper.
+
+3
+00:00:08,130 --> 00:00:12,946
+Sans outil, chaque classe se recopie à la main.
+
+4
+00:00:13,317 --> 00:00:18,117
+Fichier après fichier. Puis on recommence, pour chaque langage.
+
+5
+00:00:18,365 --> 00:00:22,090
+Même UML. Même travail. Encore et encore.
+
+6
+00:00:23,090 --> 00:00:25,370
+UML Factory LLM.
+
+7
+00:00:25,486 --> 00:00:30,090
+Votre diagramme PlantUML. Le code, écrit et vérifié.
+
+8
+00:00:31,290 --> 00:00:33,884
+Le principe tient en trois gestes.
+
+9
+00:00:34,066 --> 00:00:40,775
+Un : je choisis mon diagramme. Deux : mon langage cible. Un seul, le plus souvent, ou plusieurs si besoin.
+
+10
+00:00:40,896 --> 00:00:46,130
+Trois : je lance. Chaque fichier écrit allume sa classe, puis le code est vérifié.
+
+11
+00:00:47,330 --> 00:00:51,192
+Regardez le même diagramme. L'héritage devient extends.
+
+12
+00:00:51,247 --> 00:00:56,637
+L'interface devient implements. Les attributs deviennent des champs, avec leurs accesseurs.
+
+13
+00:00:56,825 --> 00:00:58,970
+Les relations deviennent des listes.
+
+14
+00:00:59,970 --> 00:01:02,003
+Sous le capot, trois idées.
+
+15
+00:01:02,179 --> 00:01:07,422
+Un coordinateur et un agent par langage, qui dialoguent avec le protocole agent to agent.
+
+16
+00:01:07,678 --> 00:01:11,677
+Un serveur MCP, chargé de lire le diagramme et d'écrire les fichiers.
+
+17
+00:01:11,906 --> 00:01:18,090
+Et une structure évolutive : un langage, c'est un fichier d'agent. Le noyau ne change pas.
+
+18
+00:01:19,090 --> 00:01:23,447
+Et si je voulais du PHP ? Le menu propose Java et Python… pas de PHP.
+
+19
+00:01:23,807 --> 00:01:26,554
+Je choisis « Autre langage », et je tape PHP.
+
+20
+00:01:26,713 --> 00:01:34,149
+Le LLM rédige seulement des données : les règles du langage. Rien ne s'exécute sans mon accord.
+
+21
+00:01:34,286 --> 00:01:38,252
+L'agent est testé sur des diagrammes de référence : trois sur trois conformes.
+
+22
+00:01:38,566 --> 00:01:41,530
+Un fichier créé, et PHP rejoint le menu.
+
+23
+00:01:42,530 --> 00:01:45,107
+Même diagramme. Cette fois, en PHP.
+
+24
+00:01:45,233 --> 00:01:49,850
+Onze fichiers. Vérifiés. Conformes au diagramme.
+
+25
+00:01:50,850 --> 00:01:56,113
+Les contraintes sont tenues. Évolutivité : un langage de plus, sans toucher au noyau.
+
+26
+00:01:56,379 --> 00:02:00,148
+Pertinence : le code suit le diagramme, élément par élément.
+
+27
+00:02:00,318 --> 00:02:04,401
+Fiabilité : compilé, instancié, comparé au diagramme.
+
+28
+00:02:04,575 --> 00:02:08,810
+Robustesse : délais, chemins contrôlés, erreurs annoncées.
+
+29
+00:02:09,810 --> 00:02:12,573
+Soyons pragmatiques : voici les limites.
+
+30
+00:02:12,832 --> 00:02:16,970
+Le modèle n'est pas déterministe : deux exécutions, deux codes différents.
+
+31
+00:02:17,083 --> 00:02:20,758
+Le diagramme ne décrit pas le comportement : les méthodes restent à écrire.
+
+32
+00:02:20,851 --> 00:02:27,368
+Le code est testé sur votre machine, sans bac à sable : réservé aux diagrammes de confiance.
+
+33
+00:02:27,433 --> 00:02:30,409
+Et le diagramme est envoyé à l'API du modèle.
+
+34
+00:02:30,560 --> 00:02:36,170
+Pour un langage ajouté, le code est compilé et ses noms sont comparés au diagramme. Il n'est pas exécuté.
+
+35
+00:02:38,870 --> 00:02:40,954
+UML Factory LLM. Du modèle au code.
+
+36
+00:02:41,053 --> 00:02:45,543
+Et vous savez si le code correspond à votre diagramme.
+
+37
+00:02:45,774 --> 00:02:48,110
+Essayez-le sur votre prochain diagramme.

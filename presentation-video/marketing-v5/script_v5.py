@@ -1,0 +1,52 @@
+# (affichage, texte TTS avec balises d'expression) ; un bloc = un temps fort / un sous-titre
+SCRIPT = {
+1: [("Onze classes.", "[warmly] Onze classes."),
+    ("Votre conception est prête.", "Votre conception est prête."),
+    ("Et maintenant… il faut tout retaper.", "[sighs] Et maintenant… [short pause] il faut tout RETAPER.")],
+2: [("Sans outil, chaque classe se recopie à la main.", "Sans outil, chaque classe se recopie à la main."),
+    ("Fichier après fichier.", "[tired] Fichier après fichier."),
+    ("Puis on recommence, pour chaque langage.", "Puis on recommence… pour CHAQUE langage."),
+    ("Même UML. Même travail. Encore et encore.", "[sighs] Même UML. Même travail. [pause] Encore… et encore.")],
+3: [("UML Factory LLM.", "[excited] UML Factory LLM."),
+    ("Votre diagramme PlantUML. Le code, écrit et vérifié.", "[warmly] Votre diagramme PlantUML. Le code, écrit… et vérifié.")],
+4: [("Le principe tient en trois gestes.", "Le principe tient en trois gestes."),
+    ("Un : je choisis mon diagramme.", "Un… je choisis mon diagramme."),
+    ("Deux : mon langage cible. Un seul, le plus souvent, ou plusieurs si besoin.", "Deux… mon langage cible. Un seul, le plus souvent, ou plusieurs, si besoin."),
+    ("Trois : je lance. Chaque fichier écrit allume sa classe, puis le code est vérifié.", "[excited] Trois… je lance ! Chaque fichier écrit allume sa classe, puis le code est vérifié.")],
+5: [("Regardez le même diagramme.", "Regardez le même diagramme."),
+    ("L'héritage devient extends.", "L'héritage devient EXTENDS."),
+    ("L'interface devient implements.", "L'interface devient IMPLEMENTS."),
+    ("Les attributs deviennent des champs, avec leurs accesseurs.", "Les attributs deviennent des champs, avec leurs accesseurs."),
+    ("Les relations deviennent des listes.", "Les relations deviennent des LISTES.")],
+6: [("Sous le capot, trois idées.", "Sous le capot… trois idées."),
+    ("Un coordinateur et un agent par langage, qui dialoguent avec le protocole agent to agent.", "Un coordinateur, et un agent par langage, qui dialoguent avec le protocole agent to agent."),
+    ("Un serveur MCP, chargé de lire le diagramme et d'écrire les fichiers.", "Un serveur MCP, chargé de lire le diagramme… et d'écrire les fichiers."),
+    ("Et une structure évolutive : un langage, c'est un fichier d'agent. Le noyau ne change pas.", "[warmly] Et une structure ÉVOLUTIVE. Un langage, c'est un fichier d'agent. Le noyau, lui, ne change pas.")],
+7: [("Et si je voulais du PHP ? Le menu propose Java et Python… pas de PHP.", "[curious] Et si je voulais du PHP ? Le menu propose Java et Python… [short pause] pas de PHP."),
+    ("Je choisis « Autre langage », et je tape PHP.", "Je choisis « Autre langage »… et je tape PHP."),
+    ("Le LLM rédige seulement des données : les règles du langage. Rien ne s'exécute sans mon accord.", "Le LLM rédige seulement des DONNÉES : les règles du langage. [short pause] Rien ne s'exécute sans mon accord."),
+    ("L'agent est testé sur des diagrammes de référence : trois sur trois conformes.", "L'agent est testé sur des diagrammes de référence… trois sur trois, conformes."),
+    ("Un fichier créé, et PHP rejoint le menu.", "Un fichier créé… et PHP rejoint le menu.")],
+8: [("Même diagramme. Cette fois, en PHP.", "[curious] Même diagramme. Cette fois… en PHP."),
+    ("Onze fichiers. Vérifiés. Conformes au diagramme.", "[excited] Onze fichiers. Vérifiés. [warmly] Conformes au diagramme.")],
+9: [("Les contraintes sont tenues.", "Les contraintes sont tenues."),
+    ("Évolutivité : un langage de plus, sans toucher au noyau.", "ÉVOLUTIVITÉ. Un langage de plus, sans toucher au noyau."),
+    ("Pertinence : le code suit le diagramme, élément par élément.", "PERTINENCE. Le code suit le diagramme, élément par élément."),
+    ("Fiabilité : compilé, instancié, comparé au diagramme.", "FIABILITÉ. Compilé, instancié, comparé au diagramme."),
+    ("Robustesse : délais, chemins contrôlés, erreurs annoncées.", "ROBUSTESSE. Délais, chemins contrôlés, erreurs annoncées.")],
+10: [("Soyons pragmatiques : voici les limites.", "[calmly] Soyons pragmatiques… voici les limites."),
+    ("Le modèle n'est pas déterministe : deux exécutions, deux codes différents.", "Le modèle n'est pas déterministe. Deux exécutions, deux codes différents."),
+    ("Le diagramme ne décrit pas le comportement : les méthodes restent à écrire.", "Le diagramme ne décrit pas le comportement. Les méthodes restent à écrire."),
+    ("Le code est testé sur votre machine, sans bac à sable : réservé aux diagrammes de confiance.", "Le code est testé sur votre machine, SANS bac à sable. Réservé aux diagrammes de confiance."),
+    ("Et le diagramme est envoyé à l'API du modèle.", "Et le diagramme est envoyé… à l'API du modèle."),
+    ("Pour un langage ajouté, le code est compilé et ses noms sont comparés au diagramme. Il n'est pas exécuté.", "[softly] [slowly] Pour un langage ajouté, le code est compilé, et ses noms sont comparés au diagramme. [pause] Il n'est pas exécuté.")],
+11: [("UML Factory LLM. Du modèle au code.", "[warmly] UML Factory LLM. Du modèle… au code."),
+     ("Et vous savez si le code correspond à votre diagramme.", "Et vous savez si le code correspond à votre diagramme."),
+     ("Essayez-le sur votre prochain diagramme.", "[calmly] [slowly] Essayez-le sur votre prochain diagramme.")],
+}
+if __name__ == '__main__':
+    with open('SCRIPT_VOIX_V5.txt', 'w', encoding='utf-8') as f:
+        f.write('# Script voix off V5 : une ligne par scène (affichage ‖ texte ElevenLabs avec balises)\n')
+        for n, bl in SCRIPT.items():
+            f.write(f"{n}|{' '.join(d for d,_ in bl)}\n")
+    for n, bl in SCRIPT.items(): print(n, len(' '.join(t for _, t in bl)), 'car')

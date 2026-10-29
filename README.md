@@ -26,6 +26,14 @@ flowchart LR
 |---|---|---|---|
 | fichier `.puml`, langage(s), dossier | un plan de fichiers, puis chaque fichier | compilation, noms comparés au diagramme, corrections | 🟢 conforme · 🟡 partiel · 🔴 non conforme |
 
+<div align="center">
+
+![Démonstration : la commande tapée, la génération du code puis les extraits PHP](docs/demo.gif)
+
+*Un lancement réel : la commande, les fichiers qui s'écrivent, puis le même diagramme en PHP.*
+
+</div>
+
 ## Installation (une seule fois)
 
 Pas d'installation du projet : seulement ses dépendances (`requirements.txt`, testé avec Python 3.13). Toutes les
