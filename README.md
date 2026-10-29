@@ -34,6 +34,14 @@ flowchart LR
 
 </div>
 
+La vidéo de présentation (non versionnée, trop lourde) résume trois contraintes tenues :
+
+| Contrainte | Ce que le code fait réellement |
+|---|---|
+| **Évolutivité** | Un langage de plus ne touche pas au noyau : un langage, c'est un fichier d'agent (PHP en est l'exemple). |
+| **Pertinence** | Le code suit le diagramme, élément par élément (classes, attributs, opérations, héritage, relations). |
+| **Fiabilité** | Le code est compilé, puis un verdict dit s'il est conforme au diagramme. |
+
 ## Installation (une seule fois)
 
 Pas d'installation du projet : seulement ses dépendances (`requirements.txt`, testé avec Python 3.13). Toutes les

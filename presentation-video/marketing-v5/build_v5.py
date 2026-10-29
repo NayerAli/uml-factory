@@ -759,20 +759,74 @@ a += "tl.fromTo('.row8',{opacity:0,x:-14},{opacity:1,x:0,duration:.25,stagger:.0
 a += T("tl.fromTo('#s8-v1',{opacity:0,x:-30},{opacity:1,x:0,duration:.35},@t1@);tl.fromTo('#s8-v2',{opacity:0,scale:.8},{opacity:1,scale:1,duration:.4,ease:'back.out(1.5)'},@t2@);\ntl.to('#s8-cnts',{scale:1.15,transformOrigin:'0 50%',duration:.3,yoyo:true,repeat:1},@t2@);\n", t1=tF + 1.0, t2=tF + 1.6)
 scene(8, 's8', body, a + edge_draw('s8', .4, .08))
 
-# ================================================================ S9 CONTRAINTES TENUES
+# ================================================================ S9 CONTRAINTES TENUES (3 cartes avec visuels animés)
 cc = lambda i: cue(9, i)
-CARDS9 = [('Évolutivité', 'Un langage = un fichier d\'agent.<br>PHP ajouté, noyau intact.'), ('Pertinence', 'Héritage, interfaces, attributs et relations repris du diagramme.'),
-          ('Fiabilité', 'Compilation, test de fumée,<br>verdict de conformité.'), ('Robustesse', 'Délai de 10 s, chemins validés, erreurs signalées, jamais cachées.')]
-pos9 = [(96, 230), (1004, 230), (96, 560), (1004, 560)]
-body = f'<h1 class="abs" style="left:96px;top:60px;font-size:96px;letter-spacing:-5px">Les contraintes <span class="or">sont tenues.</span></h1>'
-a = T("tl.fromTo('#s9-h',{x:-80,opacity:0},{x:0,opacity:1,duration:.5,ease:'expo.out'},.2);\n")
-body = body.replace('<h1 ', '<h1 id="s9-h" ')
-for i, ((ti, tx), (x, y)) in enumerate(zip(CARDS9, pos9)):
-    body += f'<div id="s9-c{i}" class="card" style="left:{x}px;top:{y}px;width:820px;height:270px;opacity:0"><h3>{ti}</h3><p>{tx}</p><div class="okc" id="s9-k{i}">✔</div></div>'
+GREEN = '#1f6b3a'          # vert foncé : contraste >= 4,5:1 avec le blanc
+CARDS9 = [('Évolutivité', 'Un langage de plus, sans toucher au noyau. Exemple : PHP.'),
+          ('Pertinence', 'Héritage, interfaces, attributs et relations repris du diagramme.'),
+          ('Fiabilité', 'Code compilé, puis verdict de conformité au diagramme.')]
+pos9 = [96, 690, 1284]
+CW, CH, CY = 540, 690, 190
+body = '<h1 id="s9-h" class="abs" style="left:96px;top:50px;font-size:96px;letter-spacing:-5px">Les contraintes <span class="or">sont tenues.</span></h1>'
+a = "tl.fromTo('#s9-h',{x:-80,opacity:0},{x:0,opacity:1,duration:.5,ease:'expo.out'},.2);\n"
+def box(id_, x, y, w, h, style, inner=''):
+    return f'<div id="{id_}" class="abs" style="left:{x}px;top:{y}px;width:{w}px;height:{h}px;{style}">{inner}</div>'
+# --- visuel 1 : évolution — Java et Python en place, PHP s'ajoute, le noyau ne bouge pas
+v1 = (box('s9-ev-chip', 30, 262, 250, 44, f'background:{ORANGE};color:{PAPER};border-radius:22px;font-size:26px;font-weight:700;text-align:center;line-height:44px;opacity:0', '+ php.py')
+      + box('s9-ev-up', 410, 250, 100, 70, f'color:{ORANGE};font-size:64px;font-weight:700;text-align:center;line-height:70px;opacity:0', '↗')
+      + box('s9-ev-j', 30, 360, 140, 100, f'background:{INK};color:{LIME};border-radius:12px;font-size:30px;font-weight:700;text-align:center;line-height:100px;opacity:0', 'Java')
+      + box('s9-ev-p', 200, 360, 140, 100, 'background:#5a4fcf;color:#fff;border-radius:12px;font-size:30px;font-weight:700;text-align:center;line-height:100px;opacity:0', 'Python')
+      + box('s9-ev-php', 370, 360, 140, 100, f'background:{ORANGE};color:{INK};border-radius:12px;font-size:30px;font-weight:700;text-align:center;line-height:100px;opacity:0', 'PHP')
+      + ''.join(box(f's9-ev-l{k}', 96 + k * 170, 460, 6, 70, f'background:{INK};opacity:0;transform-origin:50% 0') for k in range(3))
+      + box('s9-ev-core', 30, 530, 480, 80, f'background:{INK};color:{PAPER};border-radius:12px;font-size:30px;font-weight:700;text-align:center;line-height:80px', 'NOYAU')
+      + box('s9-ev-ck', 330, 546, 170, 48, f'background:{LIME};color:{INK};border-radius:24px;font-size:24px;font-weight:700;text-align:center;line-height:48px;opacity:0', '✔ inchangé'))
+# --- visuel 2 : pertinence — chaque élément du diagramme est retrouvé dans le code
+rows2 = [('Compte', 'class Compte {', 310), ('-solde : double', '  double solde;', 350), ('+deposer()', '  void deposer()', 390)]
+v2 = (box('s9-pe-uml', 30, 290, 200, 130, f'background:#fbfcfa;border:3px solid {INK};border-radius:8px;box-shadow:4px 5px 0 {INK}')
+      + box('s9-pe-code', 300, 290, 210, 160, f'background:{INK};border-radius:8px')
+      + ''.join(box(f's9-pe-u{k}', 40, y - 20 + (0 if k else 0), 190, 40, f'font-size:20px;line-height:40px;font-weight:{700 if k == 0 else 400};white-space:nowrap', html.escape(u)) for k, (u, c, y) in enumerate(rows2))
+      + ''.join(box(f's9-pe-c{k}', 312, y - 20, 196, 40, f'font-family:JetBrains Mono;font-size:17px;line-height:40px;color:{PAPER};white-space:pre;opacity:0', html.escape(c)) for k, (u, c, y) in enumerate(rows2))
+      + f'<svg class="abs" style="left:0;top:0;pointer-events:none" width="{CW}" height="{CH}">'
+      + ''.join(f'<path id="s9-pe-w{k}" d="M232 {y} L298 {y}" pathLength="1" stroke="{ORANGE}" stroke-width="5" fill="none" stroke-dasharray="1 1" stroke-dashoffset="1"/>' for k, (u, c, y) in enumerate(rows2))
+      + '</svg>'
+      + ''.join(box(f's9-pe-k{k}', 252, y - 14, 28, 28, f'background:{GREEN};color:#fff;border-radius:50%;font-size:18px;font-weight:700;text-align:center;line-height:28px;opacity:0', '✔') for k, (u, c, y) in enumerate(rows2))
+      + box('s9-pe-n', 30, 500, 480, 70, f'color:{INK};font-size:36px;font-weight:700;opacity:0', '<span id="s9-pe-num" class="or">0</span>/3 éléments retrouvés'))
+# --- visuel 3 : fiabilité — compilation, comparaison, verdict
+step = lambda id_, y, label: box(id_, 30, y, 480, 70, f'background:#fbfcfa;border:3px solid {INK};border-radius:12px;box-shadow:4px 5px 0 {INK};font-size:30px;font-weight:700;line-height:64px;padding-left:20px;opacity:0', label)
+v3 = (step('s9-fi-r1', 290, '1 · Code compilé') + step('s9-fi-r2', 380, '2 · Verdict de conformité')
+      + ''.join(box(f's9-fi-k{k}', 450, y, 44, 44, f'background:{GREEN};color:#fff;border-radius:50%;font-size:28px;font-weight:700;text-align:center;line-height:44px;opacity:0', '✔') for k, y in ((1, 303), (2, 393)))
+      + box('s9-fi-v', 30, 500, 480, 110, f'background:{GREEN};color:#fff;border-radius:14px;font-size:31px;font-weight:700;text-align:center;line-height:110px;white-space:nowrap;opacity:0', '✔ Conforme au diagramme'))
+for i, ((ti, tx), x, vis) in enumerate(zip(CARDS9, pos9, (v1, v2, v3))):
+    body += (f'<div id="s9-c{i}" class="card" style="left:{x}px;top:{CY}px;width:{CW}px;height:{CH}px;opacity:0"><h3>{ti}</h3>'
+             f'<p style="font-size:32px">{tx}</p><div class="okc" id="s9-k{i}">✔</div>{vis}</div>')
     t_ = cc(i + 1)
     a += (f"tl.fromTo('#s9-c{i}',{{y:50,opacity:0}},{{y:0,opacity:1,duration:.45,ease:'power3.out'}},{t_:.3f});\n"
           f"tl.fromTo('#s9-k{i}',{{opacity:0,scale:.3}},{{opacity:1,scale:1,duration:.35,ease:'back.out(2)'}},{t_ + .5:.3f});\n"
           f"tl.fromTo('#s9-c{i} h3',{{color:'{ORANGE}'}},{{color:'{INK}',duration:.8}},{t_ + .1:.3f});\n")
+# animations des visuels
+t1, t2, t3 = cc(1), cc(2), cc(3)
+a += T("""tl.fromTo('#s9-ev-j,#s9-ev-p',{opacity:0,y:30},{opacity:1,y:0,duration:.4,stagger:.15,ease:'power3.out'},@a@);
+tl.fromTo('#s9-ev-l0,#s9-ev-l1',{opacity:0,scaleY:0},{opacity:1,scaleY:1,duration:.3,stagger:.15},@a2@);
+tl.fromTo('#s9-ev-chip',{opacity:0,x:-30},{opacity:1,x:0,duration:.35},@b@);
+tl.fromTo('#s9-ev-php',{opacity:0,y:-90,scale:.7},{opacity:1,y:0,scale:1,duration:.55,ease:'bounce.out'},@b@);
+tl.fromTo('#s9-ev-l2',{opacity:0,scaleY:0},{opacity:1,scaleY:1,duration:.3},@b2@);
+tl.fromTo('#s9-ev-up',{opacity:0,y:30},{opacity:1,y:0,duration:.4,ease:'back.out(2)'},@b2@);
+tl.fromTo('#s9-ev-ck',{opacity:0,scale:.5},{opacity:1,scale:1,duration:.35,ease:'back.out(2)'},@b3@);
+""", a=t1 + .5, a2=t1 + .9, b=t1 + 3.2, b2=t1 + 3.6, b3=t1 + 4.1)
+calls = []
+for k in range(3):
+    tk = t2 + .6 + k * .8
+    a += (f"tl.fromTo('#s9-pe-c{k}',{{opacity:0,x:12}},{{opacity:1,x:0,duration:.3}},{tk:.3f});\n"
+          f"tl.to('#s9-pe-w{k}',{{strokeDashoffset:0,duration:.35,ease:'power2.out'}},{tk:.3f});\n"
+          f"tl.fromTo('#s9-pe-k{k}',{{opacity:0,scale:.3}},{{opacity:1,scale:1,duration:.25,ease:'back.out(2.5)'}},{tk + .3:.3f});\n")
+    calls.append((str(k + 1), tk + .3))
+a += f"tl.fromTo('#s9-pe-n',{{opacity:0,y:14}},{{opacity:1,y:0,duration:.4}},{t2 + .6:.3f});\n" + counter('#s9-pe-num', [('0', 0.01)] + calls)
+a += T("""tl.fromTo('#s9-fi-r1',{opacity:0,x:-40},{opacity:1,x:0,duration:.4,ease:'power3.out'},@a@);
+tl.fromTo('#s9-fi-k1',{opacity:0,scale:.3},{opacity:1,scale:1,duration:.3,ease:'back.out(2.5)'},@a2@);
+tl.fromTo('#s9-fi-r2',{opacity:0,x:-40},{opacity:1,x:0,duration:.4,ease:'power3.out'},@b@);
+tl.fromTo('#s9-fi-k2',{opacity:0,scale:.3},{opacity:1,scale:1,duration:.3,ease:'back.out(2.5)'},@b2@);
+tl.fromTo('#s9-fi-v',{opacity:0,scale:.8,rotate:-3},{opacity:1,scale:1,rotate:-1.5,duration:.5,ease:'back.out(1.8)'},@c@);
+""", a=t3 + .4, a2=t3 + .9, b=t3 + 1.5, b2=t3 + 2.0, c=t3 + 2.7)
 scene(9, 's9', body, a)
 
 # ================================================================ S10 LIMITES & RISQUES (honnêteté)

@@ -95,53 +95,49 @@ Même diagramme. Cette fois, en PHP.
 Onze fichiers. Vérifiés. Conformes au diagramme.
 
 25
-00:01:50,850 --> 00:01:56,113
-Les contraintes sont tenues. Évolutivité : un langage de plus, sans toucher au noyau.
+00:01:50,850 --> 00:01:57,792
+Les contraintes sont tenues. Évolutivité : un langage de plus, sans toucher au noyau. PHP en est l'exemple.
 
 26
-00:01:56,379 --> 00:02:00,148
+00:01:58,071 --> 00:02:01,974
 Pertinence : le code suit le diagramme, élément par élément.
 
 27
-00:02:00,318 --> 00:02:04,401
-Fiabilité : compilé, instancié, comparé au diagramme.
+00:02:02,231 --> 00:02:07,370
+Fiabilité : le code est compilé, et un verdict dit s'il est conforme au diagramme.
 
 28
-00:02:04,575 --> 00:02:08,810
-Robustesse : délais, chemins contrôlés, erreurs annoncées.
-
-29
-00:02:09,810 --> 00:02:12,573
+00:02:08,370 --> 00:02:11,133
 Soyons pragmatiques : voici les limites.
 
-30
-00:02:12,832 --> 00:02:16,970
+29
+00:02:11,392 --> 00:02:15,530
 Le modèle n'est pas déterministe : deux exécutions, deux codes différents.
 
-31
-00:02:17,083 --> 00:02:20,758
+30
+00:02:15,643 --> 00:02:19,318
 Le diagramme ne décrit pas le comportement : les méthodes restent à écrire.
 
-32
-00:02:20,851 --> 00:02:27,368
+31
+00:02:19,411 --> 00:02:25,928
 Le code est testé sur votre machine, sans bac à sable : réservé aux diagrammes de confiance.
 
-33
-00:02:27,433 --> 00:02:30,409
+32
+00:02:25,993 --> 00:02:28,969
 Et le diagramme est envoyé à l'API du modèle.
 
-34
-00:02:30,560 --> 00:02:36,170
+33
+00:02:29,120 --> 00:02:34,730
 Pour un langage ajouté, le code est compilé et ses noms sont comparés au diagramme. Il n'est pas exécuté.
 
-35
-00:02:38,870 --> 00:02:40,954
+34
+00:02:37,430 --> 00:02:39,514
 UML Factory LLM. Du modèle au code.
 
-36
-00:02:41,053 --> 00:02:45,543
+35
+00:02:39,613 --> 00:02:44,103
 Et vous savez si le code correspond à votre diagramme.
 
-37
-00:02:45,774 --> 00:02:48,110
+36
+00:02:44,334 --> 00:02:46,670
 Essayez-le sur votre prochain diagramme.
