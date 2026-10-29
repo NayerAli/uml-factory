@@ -1,19 +1,30 @@
-# UML Factory
+<div align="center">
+
+# 🏭 UML Factory
+
+**Du diagramme PlantUML au code source, écrit par un modèle d'IA, puis comparé au diagramme.**
+
+`Python 3.13` · `Java` · `Python` · `PHP` · `+ vos langages` · `OpenAI` · `Anthropic`
+
+</div>
+
+---
 
 Transforme un diagramme PlantUML (`.puml`) en code source, **écrit par un modèle d'IA** (ni regex, ni gabarits).
 Vous choisissez le fichier, le ou les langages cibles et le dossier de destination, puis vous suivez la génération en
 direct. À la fin, le code est comparé au diagramme et le modèle rend un verdict de conformité.
 
+```mermaid
+flowchart LR
+    U([👤 python -m umlfactory.cli]) -->|A2A| C[🟪 Coordinateur<br/>9200]
+    C -->|MCP| M[🟦 Serveur MCP<br/>9000<br/>lit le .puml, écrit les sources]
+    C -->|A2A| A[🟩 Un agent par langage<br/>9101+]
+    A -->|plan, fichiers, contrôles, corrections, verdict| L[(🤖 API du modèle<br/>OpenAI ou Anthropic)]
 ```
- python -m umlfactory.cli                     questions + progression en direct
-          │  A2A (streaming)
-          ▼
-   Coordinateur (9200) ──MCP──► Serveur MCP (9000) : lit le .puml, écrit les sources
-          │  A2A (streaming)
-          └──► un agent par langage (ports 9101+)   plan → fichiers → contrôles → corrections → verdict
-                      │
-                      └──► API du modèle : OpenAI (ou compatible) ou Anthropic
-```
+
+| 1️⃣ Vous choisissez | 2️⃣ Le modèle écrit | 3️⃣ Le code est contrôlé | 4️⃣ Verdict |
+|---|---|---|---|
+| fichier `.puml`, langage(s), dossier | un plan de fichiers, puis chaque fichier | compilation, noms comparés au diagramme, corrections | 🟢 conforme · 🟡 partiel · 🔴 non conforme |
 
 ## Installation (une seule fois)
 
@@ -323,6 +334,7 @@ Seules les variables ci-dessous sont lues par le programme.
 | `OPENAI_TEMPERATURE` | Créativité du modèle. Non envoyée par défaut. Ignorée par Anthropic quand la réflexion est active. |
 | `OPENAI_MAX_TOKENS` | Longueur maximale d'une réponse. Non envoyée par défaut chez OpenAI ; chez Anthropic, 8192 si absente. |
 | `UMLFACTORY_PROVIDER` | `openai` ou `anthropic` : fournisseur à utiliser quand les deux clés existent. Écrit par la CLI après le choix. |
+| `NO_COLOR` | Variable standard : si elle existe, l'affichage se fait sans couleurs. |
 | `MCP_URL`, `COORDINATOR_URL` | Adresses du serveur MCP et du coordinateur (défauts : ports 9000 et 9200). |
 | `GENERATOR_PORT_RANGE` | Plage de ports où les agents de langage sont cherchés et lancés. Défaut `9101-9150`. |
 | `GENERATOR_AGENT_URLS` | Agents de langage supplémentaires hors de cette plage (autre machine), séparés par des virgules. |
@@ -359,3 +371,15 @@ Les tests Java sont ignorés si `javac` et `java` ne sont pas disponibles.
 | `Compilation non vérifiée : délai dépassé` | La vérification a dépassé 10 secondes (machine lente ou boucle infinie). |
 | Langage ajouté en « brouillon » | Un outil manque : suivre le guide `.install.txt`, puis relancer `--add-language`. |
 | Avertissement sur un fichier à la fin | Le modèle n'a pas réussi à corriger ce fichier : le relire, ou relancer la génération. |
+
+---
+
+<div align="center">
+
+🏭 **UML Factory** · projet de Génie Logiciel, Master 1 Informatique
+
+Réalisé par [Nayer](https://github.com/NayerAli)
+
+*Du diagramme au code, sans y toucher.*
+
+</div>
