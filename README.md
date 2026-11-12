@@ -390,6 +390,240 @@ Les tests Java sont ignorés si `javac` et `java` ne sont pas disponibles.
 
 ---
 
+# ANNEXES — Diagrammes
+
+## 1. Diagramme de déploiement global (pile locale)
+
+```mermaid
+graph TB
+    subgraph Machine["Machine utilisateur (localhost)"]
+        CLI["CLI<br/>python -m umlfactory.cli"]
+        
+        subgraph Stack["Pile démarrée par deploy / CLI"]
+            MCP["Serveur MCP<br/>:9000<br/>umlfactory.mcp_server"]
+            Coord["Coordinateur A2A<br/>:9200<br/>umlfactory.coordinator"]
+            
+            subgraph Generators["Agents générateurs (ports 9101-9150)"]
+                Java["Agent Java<br/>generators/java.py"]
+                Python["Agent Python<br/>generators/python.py"]
+                PHP["Agent PHP<br/>generators/php.py"]
+                Other["… agents dynamiques<br/>(Go, Kotlin, TS…)"]
+            end
+        end
+        
+        LLM["Fournisseur LLM<br/>OpenAI / Anthropic / local"]
+        FS["Système de fichiers<br/>.puml + dossier de sortie"]
+    end
+
+    CLI -->|démarre si besoin| Stack
+    CLI -->|A2A| Coord
+    Coord -->|MCP tools| MCP
+    Coord -->|A2A streaming| Generators
+    Generators -->|chat| LLM
+    MCP -->|read_puml / write_sources| FS
+```
+
+---
+
+## 2. Diagramme de composants & protocoles
+
+```mermaid
+flowchart LR
+    subgraph Client
+        CLI[CLI interactive]
+        Deploy[deploy.py]
+    end
+
+    subgraph Serveurs
+        MCP[MCP Server<br/>Streamable HTTP]
+        Coord[Coordinator<br/>A2A JSON-RPC]
+    end
+
+    subgraph Agents["Agents générateurs"]
+        Base[BaseGeneratorAgent]
+        Java[JavaGenerator + JavaRuntime]
+        Python[PythonGenerator + PythonRuntime]
+        Decl[CommandGenerator<br/>/_declarative.py]
+        Dyn[Agents générés<br/>generators/&lt;id&gt;.py]
+    end
+
+    CLI --> Coord
+    Deploy --> MCP & Coord & Agents
+    Coord -->|discover_local + call_agent| Agents
+    Coord -->|read_puml / write_sources| MCP
+    Agents --> Base
+    Java & Python --> Base
+    Decl --> Base
+    Dyn --> Decl
+```
+
+---
+
+## 3. Cycle de vie d’un langage (extension complète)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Demande: --add-language "Go"
+    
+    Demande --> SpecDraft: LLM rédige LanguageSpec<br/>(données uniquement)
+    SpecDraft --> CheckTools: check_language
+    
+    CheckTools --> Missing: outils absents
+    Missing --> Guide: guide d’installation<br/>(texte, rien n’est exécuté)
+    Guide --> CheckTools: utilisateur installe + relance
+    
+    CheckTools --> Approve: outils présents
+    Approve --> UserConfirm: utilisateur valide<br/>la commande de build
+    
+    UserConfirm --> Validate: validate_language<br/>(corpus de référence)
+    
+    Validate --> Refine: score < 75
+    Refine --> Validate: amélioration des règles
+    
+    Validate --> Export: score ≥ 75 → validated
+    Export --> generators/id.py: export_generator()
+    
+    generators/id.py --> Hosted: host_language()<br/>(thread in-process)
+    Hosted --> Discoverable: apparaît dans list_languages
+    Discoverable --> [*]
+    
+    Validate --> Experimental: score insuffisant
+    Experimental --> [*]
+```
+
+---
+
+## 4. Flux de génération (runtime)
+
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur / CLI
+    participant C as Coordinateur
+    participant M as MCP
+    participant G as Agent Générateur
+    participant L as LLM
+    participant R as Runtime (javac/python/…)
+
+    U->>C: {puml_path, languages, output_dir}
+    C->>M: read_puml(path)
+    M-->>C: texte PlantUML
+    
+    C->>C: discover_local(ports)
+    C->>G: call_agent({puml, package…})
+    
+    G->>L: plan (JSON fichiers)
+    L-->>G: plan
+    
+    loop Pour chaque fichier
+        G->>L: génération fichier
+        L-->>G: code
+    end
+    
+    G->>G: validate() statique
+    G->>R: Runtime.check() (compilation + smoke)
+    
+    alt Erreurs
+        G->>L: repair
+        L-->>G: code corrigé
+    end
+    
+    G->>L: judge_conformity
+    L-->>G: verdict conforme/partiel/…
+    
+    G-->>C: artefacts + _report.json
+    C->>M: write_sources(dest, files)
+    M-->>C: written[]
+    C-->>U: rapport final
+```
+
+---
+
+## 5. Architecture interne d’un agent générateur
+
+```mermaid
+classDiagram
+    class BaseGeneratorAgent {
+        <<abstract>>
+        +language
+        +display_name
+        +style_rules
+        +plan_rules
+        +validate()
+        +runtime()
+        +generate()
+        +build_card()
+    }
+    
+    class PlanningMixin
+    class PromptsMixin
+    class RepairMixin
+    
+    BaseGeneratorAgent --|> PlanningMixin
+    BaseGeneratorAgent --|> PromptsMixin
+    BaseGeneratorAgent --|> RepairMixin
+    BaseGeneratorAgent --|> AgentExecutor
+    
+    class JavaGenerator
+    class PythonGenerator
+    class CommandGenerator
+    class DeclarativeGenerator
+    
+    JavaGenerator --|> BaseGeneratorAgent
+    PythonGenerator --|> BaseGeneratorAgent
+    CommandGenerator --|> BaseGeneratorAgent
+    DeclarativeGenerator --|> CommandGenerator
+    
+    class JavaRuntime
+    class PythonRuntime
+    class CommandRuntime
+    
+    JavaGenerator --> JavaRuntime
+    PythonGenerator --> PythonRuntime
+    CommandGenerator --> CommandRuntime
+```
+
+---
+
+## 6. Ports & découverte automatique
+
+```mermaid
+flowchart TD
+    Deploy["deploy.py / CLI"] -->|plan_components| Ports
+    
+    subgraph Ports["Plage GENERATOR_PORT_RANGE (9101-9150)"]
+        P1[9101 – java]
+        P2[9102 – python]
+        P3[9103 – php]
+        P4[9104 – langage ajouté]
+        Pn[… ports libres]
+    end
+    
+    Discover["discover_local()"] -->|scan TCP + Agent Card| Ports
+    Coord["Coordinateur"] -->|index_languages| Discover
+    CLI -->|"list_languages / generate"| Coord
+```
+
+---
+
+## 7. Sécurité & garde-fous de la vérification
+
+```mermaid
+flowchart TD
+    Code[Code généré] --> Scan[scan_sensitive]
+    Scan -->|appels interdits| Blocked[score=0 + skipped]
+    Scan -->|OK| Tools{outils présents ?}
+    
+    Tools -->|non| Skipped[skipped = outil introuvable]
+    Tools -->|oui| Temp[dossier temporaire jetable]
+    
+    Temp --> Env[clean_env – pas de clés API]
+    Env --> Budget[Tracker budget ≤ 10 s]
+    Budget --> Compile[compilation / syntaxe]
+    Compile --> Smoke[test de fumée + conformité]
+    Smoke --> Score[compute_score]
+```
+
+
 <div align="center">
 
 🏭 **UML Factory** · projet de Génie Logiciel, Master 1 Informatique
