@@ -10,7 +10,6 @@ Chaque étape est publiée au client sous forme d'événement {"event": "step", 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import platform
 import time
@@ -21,6 +20,7 @@ from pydantic import ValidationError
 from .config import Settings
 from .eval_corpus import Reference, select
 from .generators import SUPPORT_MODULES
+from .generators._declarative import DeclarativeGenerator
 from .generators.base import MAX_REPAIRS, BaseGeneratorAgent, GenerationRequest
 from .languages import (ALLOWED_TOOLS, VALIDATED_MIN, LanguageSpec, delete_generated, delete_spec, export_generator,
                         guide_path, is_generated, load_spec, safety_problems, sanitize_id, save_spec, spec_path)

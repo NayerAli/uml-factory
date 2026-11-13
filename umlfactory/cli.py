@@ -31,7 +31,7 @@ from a2a.client import A2ACardResolver
 
 from . import providers, ui
 from .a2a_common import AgentFailed, call_agent
-from .config import ConfigError, describe, load_env_file, load_settings
+from .config import ConfigError, load_env_file, load_settings
 
 
 class CliError(RuntimeError):
@@ -282,7 +282,7 @@ async def run(args: argparse.Namespace, term: ui.Term) -> int:
     probe = CoordinatorRequest(output_dir=str(out_dir), layout=args.layout)
     targets = {Path(pick_destination(probe, l, languages)) for l in languages} if languages else {out_dir}
     existing = sum(count_files(t) for t in targets)
-    overwrite = args.overwrite or args.yes
+    overwrite = args.overwrite
     if existing and not overwrite:
         where = ", ".join(str(t) for t in sorted(targets))
         if not interactive:
@@ -423,7 +423,6 @@ def log_crash(exc: BaseException) -> str:
 def main() -> int:
     load_env_file()
     args = build_parser().parse_args()
-    args.yes = False
     term = ui.Term()
     try:
         settings = load_settings(require_api=False)

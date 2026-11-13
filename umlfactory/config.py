@@ -14,12 +14,11 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urlparse
 
 DEFAULT_MCP_URL = "http://127.0.0.1:9000/mcp"
 DEFAULT_COORDINATOR_URL = "http://127.0.0.1:9200"
-DEFAULT_PORT_RANGE = (9101, 9150)
-VERIFY_BUDGET = 10.0                   # secondes de la vérification d'exécution (valeur fixe)     # plage où les agents de langage sont cherchés (et lancés par deploy)
+DEFAULT_PORT_RANGE = (9101, 9150)       # plage où les agents de langage sont cherchés (et lancés par deploy)
+VERIFY_BUDGET = 10.0                   # secondes de la vérification d'exécution (valeur fixe)
 
 OPENAI = "openai"
 ANTHROPIC = "anthropic"
