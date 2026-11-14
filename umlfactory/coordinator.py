@@ -17,7 +17,7 @@ from a2a.helpers.proto_helpers import get_data_parts, new_task_from_user_message
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part, TaskState
+from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from pydantic import BaseModel, Field, ValidationError
 
 from . import mcp_client

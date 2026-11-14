@@ -572,7 +572,6 @@ La CLI (`python -m umlfactory.cli`) allume la pile, délègue au coordinateur (A
 | Dynamique — machines à états | Fichier généré, pile, verdict | 13, 14, 15 |
 | Transverses | Chronologie, carte mentale | 16, 17 |
 
-
 <div align="center">
 
 🏭 **UML Factory** · projet de Génie Logiciel, Master 1 Informatique
