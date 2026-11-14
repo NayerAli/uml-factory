@@ -552,7 +552,7 @@ La CLI (`python -m umlfactory.cli`) allume la pile, délègue au coordinateur (A
 
 **Explication** : synthèse visuelle de tout le projet.
 
-![Carte mentale de l'architecture](assets/Carte-architecture.png)
+![Carte mentale de l'architecture](assets/carte-architecture.png)
 
 ---
 
