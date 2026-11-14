@@ -106,6 +106,7 @@ Ensemble, ils forment **la pile**. Vous n'avez rien à lancer vous-même :
 
 La pile n'est démarrée automatiquement que si `COORDINATOR_URL` est une adresse locale (`127.0.0.1`, `localhost`).
 
+
 ### Laisser la pile allumée : `--keep-running` et `--stop`
 
 Pour enchaîner plusieurs conversions sans attendre l'allumage à chaque fois :
@@ -390,238 +391,186 @@ Les tests Java sont ignorés si `javac` et `java` ne sont pas disponibles.
 
 ---
 
-# ANNEXES — Diagrammes
+## Annexes : Architecture Logicielle, Modélisation UML et Analyse Dynamique du Système Multi-Agents
 
-## 1. Diagramme de déploiement global (pile locale)
+1. [Vue d'ensemble du SMA](#1-vue-densemble-du-sma)
+2. [Diagramme de composants](#2-diagramme-de-composants)
+3. [Diagramme de déploiement](#3-diagramme-de-déploiement)
+4. [Diagramme de paquetages](#4-diagramme-de-paquetages)
+5. [Diagramme de classes](#5-diagramme-de-classes)
+6. [Diagramme d'objets](#6-diagramme-dobjets)
+7. [Diagramme de cas d'utilisation](#7-diagramme-de-cas-dutilisation)
+8. [Diagramme de séquence — génération nominale](#8-diagramme-de-séquence--génération-nominale)
+9. [Diagramme de séquence — vérification et verdict](#9-diagramme-de-séquence--vérification-et-verdict)
+10. [Diagramme de séquence — ajout d'un langage](#10-diagramme-de-séquence--ajout-dun-langage)
+11. [Diagramme de communication](#11-diagramme-de-communication)
+12. [Diagramme d'activité — ajout d'un langage](#12-diagramme-dactivité--ajout-dun-langage)
+13. [Diagramme d'états — fichier généré](#13-diagramme-détats--fichier-généré)
+14. [Diagramme d'états — la pile](#14-diagramme-détats--la-pile)
+15. [Diagramme d'états — verdict de conformité](#15-diagramme-détats--verdict-de-conformité)
+16. [Chronologie d'une exécution](#16-chronologie-dune-exécution)
+17. [Carte mentale de l'architecture](#17-carte-mentale-de-larchitecture)
 
-```mermaid
-graph TB
-    subgraph Machine["Machine utilisateur (localhost)"]
-        CLI["CLI<br/>python -m umlfactory.cli"]
-        
-        subgraph Stack["Pile démarrée par deploy / CLI"]
-            MCP["Serveur MCP<br/>:9000<br/>umlfactory.mcp_server"]
-            Coord["Coordinateur A2A<br/>:9200<br/>umlfactory.coordinator"]
-            
-            subgraph Generators["Agents générateurs (ports 9101-9150)"]
-                Java["Agent Java<br/>generators/java.py"]
-                Python["Agent Python<br/>generators/python.py"]
-                PHP["Agent PHP<br/>generators/php.py"]
-                Other["… agents dynamiques<br/>(Go, Kotlin, TS…)"]
-            end
-        end
-        
-        LLM["Fournisseur LLM<br/>OpenAI / Anthropic / local"]
-        FS["Système de fichiers<br/>.puml + dossier de sortie"]
-    end
-
-    CLI -->|démarre si besoin| Stack
-    CLI -->|A2A| Coord
-    Coord -->|MCP tools| MCP
-    Coord -->|A2A streaming| Generators
-    Generators -->|chat| LLM
-    MCP -->|read_puml / write_sources| FS
-```
 
 ---
 
-## 2. Diagramme de composants & protocoles
+## 1. Vue d'ensemble du SMA
 
-```mermaid
-flowchart LR
-    subgraph Client
-        CLI[CLI interactive]
-        Deploy[deploy.py]
-    end
+La CLI (`python -m umlfactory.cli`) allume la pile, délègue au coordinateur (A2A), qui lit le `.puml` via le serveur MCP et fait écrire le code par les agents de langage, eux-mêmes clients de l'API du modèle d'IA.
 
-    subgraph Serveurs
-        MCP[MCP Server<br/>Streamable HTTP]
-        Coord[Coordinator<br/>A2A JSON-RPC]
-    end
+![Architecture du SMA](assets/Vue-SMA.png)
 
-    subgraph Agents["Agents générateurs"]
-        Base[BaseGeneratorAgent]
-        Java[JavaGenerator + JavaRuntime]
-        Python[PythonGenerator + PythonRuntime]
-        Decl[CommandGenerator<br/>/_declarative.py]
-        Dyn[Agents générés<br/>generators/&lt;id&gt;.py]
-    end
-
-    CLI --> Coord
-    Deploy --> MCP & Coord & Agents
-    Coord -->|discover_local + call_agent| Agents
-    Coord -->|read_puml / write_sources| MCP
-    Agents --> Base
-    Java & Python --> Base
-    Decl --> Base
-    Dyn --> Decl
-```
+**Explication** : aucun gabarit ni regex pour générer : le modèle d'IA écrit un plan de fichiers puis chaque fichier. La fiabilité vient d'une boucle de contrôle (compilation, comparaison des noms avec le diagramme, correction, verdict).
 
 ---
 
-## 3. Cycle de vie d’un langage (extension complète)
+## 2. Diagramme de composants
 
-```mermaid
-stateDiagram-v2
-    [*] --> Demande: --add-language "Go"
-    
-    Demande --> SpecDraft: LLM rédige LanguageSpec<br/>(données uniquement)
-    SpecDraft --> CheckTools: check_language
-    
-    CheckTools --> Missing: outils absents
-    Missing --> Guide: guide d’installation<br/>(texte, rien n’est exécuté)
-    Guide --> CheckTools: utilisateur installe + relance
-    
-    CheckTools --> Approve: outils présents
-    Approve --> UserConfirm: utilisateur valide<br/>la commande de build
-    
-    UserConfirm --> Validate: validate_language<br/>(corpus de référence)
-    
-    Validate --> Refine: score < 75
-    Refine --> Validate: amélioration des règles
-    
-    Validate --> Export: score ≥ 75 → validated
-    Export --> generators/id.py: export_generator()
-    
-    generators/id.py --> Hosted: host_language()<br/>(thread in-process)
-    Hosted --> Discoverable: apparaît dans list_languages
-    Discoverable --> [*]
-    
-    Validate --> Experimental: score insuffisant
-    Experimental --> [*]
-```
+**Explication** : vue logique. La CLI orchestre ; le coordinateur répartit le travail et gère les langages ; le serveur MCP est la seule porte d'entrée/sortie des fichiers ; chaque agent de langage encapsule les prompts et la vérification de son langage. Les agents sont interchangeables : ajouter un langage = ajouter un fichier dans `umlfactory/generators/`, sans toucher au noyau.
+
+![Diagramme de composants](assets/Diagramme-composants.png)
 
 ---
 
-## 4. Flux de génération (runtime)
+## 3. Diagramme de déploiement
 
-```mermaid
-sequenceDiagram
-    participant U as Utilisateur / CLI
-    participant C as Coordinateur
-    participant M as MCP
-    participant G as Agent Générateur
-    participant L as LLM
-    participant R as Runtime (javac/python/…)
+**Explication** : vue physique. Tout tourne sur le poste de l'utilisateur, sur `127.0.0.1` uniquement. La CLI démarre les trois familles de processus (ou réutilise une pile déjà allumée via `.umlfactory-stack.json`), et les agents de langage appellent l'API du modèle d'IA sur Internet. Les journaux vont dans `logs/`.
 
-    U->>C: {puml_path, languages, output_dir}
-    C->>M: read_puml(path)
-    M-->>C: texte PlantUML
-    
-    C->>C: discover_local(ports)
-    C->>G: call_agent({puml, package…})
-    
-    G->>L: plan (JSON fichiers)
-    L-->>G: plan
-    
-    loop Pour chaque fichier
-        G->>L: génération fichier
-        L-->>G: code
-    end
-    
-    G->>G: validate() statique
-    G->>R: Runtime.check() (compilation + smoke)
-    
-    alt Erreurs
-        G->>L: repair
-        L-->>G: code corrigé
-    end
-    
-    G->>L: judge_conformity
-    L-->>G: verdict conforme/partiel/…
-    
-    G-->>C: artefacts + _report.json
-    C->>M: write_sources(dest, files)
-    M-->>C: written[]
-    C-->>U: rapport final
-```
+![Diagramme de déploiement](assets/Diagramme-déploiement.png)
 
 ---
 
-## 5. Architecture interne d’un agent générateur
+## 4. Diagramme de paquetages
 
-```mermaid
-classDiagram
-    class BaseGeneratorAgent {
-        <<abstract>>
-        +language
-        +display_name
-        +style_rules
-        +plan_rules
-        +validate()
-        +runtime()
-        +generate()
-        +build_card()
-    }
-    
-    class PlanningMixin
-    class PromptsMixin
-    class RepairMixin
-    
-    BaseGeneratorAgent --|> PlanningMixin
-    BaseGeneratorAgent --|> PromptsMixin
-    BaseGeneratorAgent --|> RepairMixin
-    BaseGeneratorAgent --|> AgentExecutor
-    
-    class JavaGenerator
-    class PythonGenerator
-    class CommandGenerator
-    class DeclarativeGenerator
-    
-    JavaGenerator --|> BaseGeneratorAgent
-    PythonGenerator --|> BaseGeneratorAgent
-    CommandGenerator --|> BaseGeneratorAgent
-    DeclarativeGenerator --|> CommandGenerator
-    
-    class JavaRuntime
-    class PythonRuntime
-    class CommandRuntime
-    
-    JavaGenerator --> JavaRuntime
-    PythonGenerator --> PythonRuntime
-    CommandGenerator --> CommandRuntime
-```
+**Explication** : organisation du code. `umlfactory` est le paquet unique ; `generators` porte un fichier par langage plus le code commun (`base`, `planning`, `prompts`, `repair`, `_declarative`) ; `ui` isole l'affichage. Les dépendances vont des agents vers le commun, jamais entre agents.
+
+![Diagramme de paquetages](assets/Diagramme-paquetages.png)
 
 ---
 
-## 6. Ports & découverte automatique
+## 5. Diagramme de classes
 
-```mermaid
-flowchart TD
-    Deploy["deploy.py / CLI"] -->|plan_components| Ports
-    
-    subgraph Ports["Plage GENERATOR_PORT_RANGE (9101-9150)"]
-        P1[9101 – java]
-        P2[9102 – python]
-        P3[9103 – php]
-        P4[9104 – langage ajouté]
-        Pn[… ports libres]
-    end
-    
-    Discover["discover_local()"] -->|scan TCP + Agent Card| Ports
-    Coord["Coordinateur"] -->|index_languages| Discover
-    CLI -->|"list_languages / generate"| Coord
-```
+**Explication** : conception objet. `BaseGeneratorAgent` porte la mécanique commune d'un agent de langage (plan, écriture, réparation, verdict) ; `_declarative.CommandGenerator` permet de définir un langage en quelques attributs (comme `KotlinGenerator` ci-dessous, exemple du readme) ; `JavaGenerator` et `PythonGenerator` ajoutent leur vérification d'exécution propre via `runtime()`.
+
+![Diagramme de classes](assets/Diagramme-classes.png)
 
 ---
 
-## 7. Sécurité & garde-fous de la vérification
+## 6. Diagramme d'objets
 
-```mermaid
-flowchart TD
-    Code[Code généré] --> Scan[scan_sensitive]
-    Scan -->|appels interdits| Blocked[score=0 + skipped]
-    Scan -->|OK| Tools{outils présents ?}
-    
-    Tools -->|non| Skipped[skipped = outil introuvable]
-    Tools -->|oui| Temp[dossier temporaire jetable]
-    
-    Temp --> Env[clean_env – pas de clés API]
-    Env --> Budget[Tracker budget ≤ 10 s]
-    Budget --> Compile[compilation / syntaxe]
-    Compile --> Smoke[test de fumée + conformité]
-    Smoke --> Score[compute_score]
-```
+**Explication** : instantané pendant une génération Java de `examples/model.puml` : le coordinateur a délégué à l'agent Java (port 9101), deux fichiers sont en cours, l'un en correction après un échec de compilation `javac`.
+
+![Diagramme d'objets](assets/Diagramme-objets.png)
+
+---
+
+## 7. Diagramme de cas d'utilisation
+
+**Explication** : ce que l'utilisateur fait avec le SMA. Le cas principal « Convertir un diagramme » inclut le choix du fournisseur de modèle, le démarrage de la pile et la vérification du code. « Ajouter un langage » (menu « Autre langage… » ou `--add-language`) et la gestion de la pile (`--keep-running`, `--stop`, `deploy`) sont des cas séparés.
+
+
+![Diagramme de cas d'utilisation](assets/Diagramme-cas-utilisation.png)
+
+---
+
+## 8. Diagramme de séquence — génération nominale
+
+**Explication** : déroulé complet d'une conversion. La CLI teste les clés du `.env`, allume la pile, envoie la demande au coordinateur (A2A). Le coordinateur lit le `.puml` via MCP, l'agent de langage demande un plan au modèle, fait écrire chaque fichier, puis le coordinateur fait vérifier le code et rend le verdict. La CLI écrit les fichiers et éteint la pile.
+
+![Diagramme de séquence — génération nominale](assets/Diagramme-séquence-génération-nominale.png)
+
+---
+
+## 9. Diagramme de séquence — vérification et verdict
+
+**Explication** : zoom sur la boucle de fiabilité. Chaque fichier subit les contrôles du langage, la compilation (budget 10 s), la comparaison des noms avec le diagramme, puis jusqu'à 2 tours de correction par le modèle. Enfin le modèle rend son verdict de conformité.
+
+![Diagramme de séquence — vérification et verdict](assets/Diagramme-séquence-vérification&verdict.png)
+
+---
+
+## 10. Diagramme de séquence — ajout d'un langage
+
+**Explication** : le SMA se réécrit lui-même partiellement : le modèle rédige des **données** (jamais du code Python), la CLI vérifie les outils, demande l'autorisation pour la commande de vérification, teste l'agent sur les diagrammes de référence (score 75/100 requis), puis génère le fichier d'agent depuis un gabarit fixe.
+
+![Diagramme de séquence — ajout d'un langage](assets/Diagramme-séquence-ajout-langage.png)
+
+---
+
+## 11. Diagramme de communication
+
+**Explication** : le scénario nominal vu comme collaboration numérotée : qui parle à qui, dans quel ordre.
+
+![Diagramme de communication](assets/Diagramme-communication.png)
+
+---
+
+## 12. Diagramme d'activité — ajout d'un langage
+
+**Explication** : version activité de la section 10, avec les deux points de décision (outils présents, score de validation) et la boucle de reformulation unique des règles.
+
+
+
+![Diagramme d'activité — ajout d'un langage](assets/Diagramme-activité-ajout-langage.png)
+
+---
+
+## 13. Diagramme d'états — fichier généré
+
+**Explication** : les états affichés en direct par la CLI pour chaque fichier, avec la boucle de correction limitée à 2 tours.
+
+![Diagramme d'états — fichier généré](assets/Diagramme-états-fichier-généré.png)
+
+---
+
+## 14. Diagramme d'états — la pile
+
+**Explication** : les trois situations documentées du cycle de vie de la pile, pilotées par `COORDINATOR_URL` (démarrage automatique seulement si l'adresse est locale), `--keep-running`, `--stop` et `deploy.py`.
+
+
+![Diagramme d'états — la pile](assets/Diagramme-états-pile.png)
+
+---
+
+## 15. Diagramme d'états — verdict de conformité
+
+**Explication** : les quatre verdicts possibles et leurs conditions, tels que définis dans le readme.
+
+![Diagramme d'états — verdict de conformité](assets/Diagramme-états-verdict-conformité.png)
+
+---
+
+## 16. Chronologie d'une exécution
+
+**Explication** : vue temporelle condensée d'une conversion Java, utile en soutenance.
+
+![Chronologie d'une exécution](assets/Chronologie-exécution.png)
+
+---
+
+## 17. Carte mentale de l'architecture
+
+**Explication** : synthèse visuelle de tout le projet.
+
+![Carte mentale de l'architecture](assets/Carte-architecture.png)
+
+---
+
+## Récapitulatif des vues UML couvertes
+
+| Vue UML | Diagramme | Section |
+| --- | --- | --- |
+| Statique — structure logique | Composants | 2 |
+| Statique — structure physique | Déploiement | 3 |
+| Statique — organisation du code | Paquetages | 4 |
+| Statique — conception objet | Classes | 5 |
+| Statique — instantané | Objets | 6 |
+| Dynamique — besoins | Cas d'utilisation | 7 |
+| Dynamique — interactions | Séquences (nominal, vérification, ajout de langage) | 8, 9, 10 |
+| Dynamique — interactions | Communication / collaboration | 11 |
+| Dynamique — flux | Activité (ajout d'un langage) | 12 |
+| Dynamique — machines à états | Fichier généré, pile, verdict | 13, 14, 15 |
+| Transverses | Chronologie, carte mentale | 16, 17 |
 
 
 <div align="center">
