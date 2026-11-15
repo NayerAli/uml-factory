@@ -1,6 +1,7 @@
 """Socle des agents de langage « simples » : règles de génération + commande de vérification, sans code propre au langage.
 
 Le préfixe « _ » exclut ce fichier de la liste des langages (il n'est pas un langage lui-même).
+
 """
 
 from __future__ import annotations
